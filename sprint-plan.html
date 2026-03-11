@@ -1,0 +1,2305 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sprint Capacity — Loading…</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; overflow: hidden; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #f4f5f7; color: #172b4d; font-size: 14px;
+         display: flex; flex-direction: column; }
+
+  /* Header */
+  .header { background: #0052cc; color: #fff; padding: 24px 32px; }
+  .header h1 { font-size: 22px; font-weight: 600; letter-spacing: -0.3px; }
+  .header .meta { margin-top: 6px; opacity: 0.85; font-size: 13px; display: flex; gap: 24px; }
+  .header .meta span { display: flex; align-items: center; gap: 5px; }
+
+  /* Layout */
+  .container { max-width: 2265px; width: 100%; margin: 0 auto; padding: 24px 32px; display: grid; grid-template-columns: minmax(800px, 900px) 1fr; gap: 24px; flex: 1; overflow: hidden; }
+  .col-left  { display: flex; flex-direction: column; gap: 24px; overflow-y: auto; min-height: 0; }
+  .col-right { display: flex; flex-direction: column; gap: 24px; min-width: 0; overflow-y: auto; min-height: 0; }
+
+  /* Summary grid 4×1 in left column */
+  .col-left .summary-grid { grid-template-columns: repeat(4, 1fr); gap: 8px; }
+  .col-left .stat { padding: 10px 6px; }
+
+  /* Cards */
+  .card { background: #fff; border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,.1); overflow: hidden; flex-shrink: 0; }
+  .card-header { padding: 14px 20px; border-bottom: 1px solid #ebecf0; display: flex; align-items: center; justify-content: space-between; }
+  #backlog-container { display: grid; gap: 16px; flex-shrink: 0; }
+  #backlog-container .card-header { cursor: grab; }
+  #backlog-container .card-header:active { cursor: grabbing; }
+  #backlog-container .card.drag-over-card { outline: 2px dashed #0052cc; outline-offset: -2px; }
+  .card-header h2 { font-size: 14px; font-weight: 600; text-transform: uppercase; letter-spacing: .5px; color: #5e6c84; }
+  .card-body { padding: 20px; }
+
+  /* Tables */
+  table { width: 100%; border-collapse: collapse; }
+  th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .5px; color: #5e6c84; padding: 8px 10px; border-bottom: 2px solid #ebecf0; white-space: nowrap; }
+  td { padding: 9px 10px; border-bottom: 1px solid #f4f5f7; vertical-align: middle; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: #f8f9fa; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  th.num { text-align: right; }
+  td.capacity { text-align: right; font-weight: 700; font-size: 15px; }
+  td.zero { color: #bf2600; }
+  td.low  { color: #ff8b00; }
+  td.full { color: #006644; }
+
+  /* Person column */
+  .person { font-weight: 500; white-space: nowrap; }
+
+  /* Deduction style */
+  .deduct { color: #bf2600; }
+  .deduct-zero { color: #97a0af; }
+
+  /* Summary grid */
+  .summary-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+  .stat { background: #f4f5f7; border-radius: 5px; padding: 16px; text-align: center; }
+  .stat .val { font-size: 28px; font-weight: 700; color: #172b4d; }
+  .stat .lbl { font-size: 11px; text-transform: uppercase; letter-spacing: .5px; color: #5e6c84; margin-top: 4px; }
+  .stat.highlight .val { color: #0052cc; }
+  .stat.warn .val { color: #ff8b00; }
+  .stat.danger .val { color: #bf2600; }
+  .stat.good .val { color: #006644; }
+
+  /* Headroom bar */
+  .headroom-bar { height: 12px; border-radius: 6px; background: #ebecf0; overflow: hidden; margin-top: 8px; }
+  .headroom-fill { height: 100%; border-radius: 6px; transition: width .4s; }
+  .headroom-label { display: flex; justify-content: space-between; margin-top: 5px; font-size: 12px; color: #5e6c84; }
+
+  /* Badges */
+  .badge { display: inline-block; padding: 2px 7px; border-radius: 3px; font-size: 11px; font-weight: 600; white-space: nowrap; }
+  .badge-story    { background: #deebff; color: #0747a6; }
+  .badge-bug      { background: #ffebe6; color: #bf2600; }
+  .badge-spike    { background: #eae6ff; color: #403294; }
+  .badge-epic     { background: #eae6ff; color: #403294; }
+  .badge-todo     { background: #f4f5f7; color: #42526e; }
+  .badge-progress { background: #fff3cd; color: #7a4f00; }
+  .badge-done     { background: #e3fcef; color: #006644; }
+  .badge-blocked  { background: #ffebe6; color: #bf2600; }
+  .badge-staging  { background: #e6fcff; color: #00636e; }
+
+  .pri-critical { color: #bf2600; }
+  .pri-major    { color: #ff8b00; }
+  .pri-minor    { color: #5e6c84; }
+  .pri-icon     { width: 16px; height: 16px; vertical-align: text-bottom; margin-right: 2px; }
+  .pri-picker { position: relative; display: inline-block; cursor: pointer; border-bottom: 1px dashed #c1c7d0; padding: 1px 2px; white-space: nowrap; }
+  .pri-picker .pri-label { display: inline; }
+  .pri-picker .pri-caret { font-size: 10px; margin-left: 3px; color: #97a0af; }
+  .pri-menu { display: none; position: fixed; z-index: 1000;
+              background: #fff; border: 1px solid #dfe1e6; border-radius: 3px;
+              box-shadow: 0 4px 8px rgba(0,0,0,.1); min-width: 140px; padding: 4px 0; }
+  .pri-menu.open { display: block; }
+  .pri-menu-item { display: flex; align-items: center; padding: 5px 10px; cursor: pointer; white-space: nowrap; }
+  .pri-menu-item:hover { background: #ebecf0; }
+  .pri-menu-item.selected { background: #deebff; }
+  .pri-menu-item img { width: 16px; height: 16px; margin-right: 6px; flex-shrink: 0; }
+  td:has(.pri-picker) { white-space: nowrap; }
+
+  /* Sprint issues section */
+  .empty-state { text-align: center; padding: 28px; color: #97a0af; font-style: italic; }
+
+  /* Source note */
+  .source-note { font-size: 11px; color: #97a0af; }
+
+  .section-label { font-size: 11px; text-transform: uppercase; letter-spacing: .5px; color: #97a0af; padding: 10px 20px 4px; }
+
+  .total-row td { font-weight: 700; background: #f4f5f7; border-top: 2px solid #ebecf0; }
+
+  a { color: #0052cc; text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  /* ── Drag & Drop ── */
+  tr[draggable="true"] { cursor: grab; user-select: none; }
+  tr[draggable="true"]:hover td { background: #f0f4ff !important; }
+  tr[draggable="true"] td:first-child { padding-left: 18px; position: relative; }
+  tr[draggable="true"] td:first-child::before { content: '⠿'; color: #c1c7d0; font-size: 11px; position: absolute; left: 4px; top: 50%; transform: translateY(-50%); }
+  tr.dragging { opacity: 0.35; }
+
+  tbody.droppable { transition: background .15s; }
+  tbody.drop-over { outline: 2px dashed #0052cc; outline-offset: -3px; background: #e6f0ff; }
+  tbody.drop-over tr:hover td { background: transparent !important; }
+
+  /* Sprint commitment card */
+  #sprint-commit-card { border-left: 3px solid #0052cc; }
+  #sprint-commit-card.drop-over-card { box-shadow: 0 0 0 2px #0052cc; }
+
+  /* Toast notification */
+  #toast {
+    position: fixed; bottom: 28px; right: 28px;
+    padding: 10px 18px; border-radius: 5px; font-size: 13px; font-weight: 500;
+    z-index: 1000; display: none; box-shadow: 0 3px 10px rgba(0,0,0,.18);
+    animation: fadeIn .2s ease;
+  }
+  #toast.success { background: #e3fcef; color: #006644; border: 1px solid #79f2c0; }
+  #toast.warn    { background: #fff7d6; color: #7a4f00; border: 1px solid #f6c342; }
+  #toast.error   { background: #ffebe6; color: #bf2600; border: 1px solid #ff8f73; }
+  #toast.info    { background: #deebff; color: #0747a6; border: 1px solid #4c9aff; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+  /* Pending changes panel */
+  #pending-panel {
+    background: #fff7d6; border: 1px solid #f6c342; border-radius: 5px;
+    padding: 14px 18px; display: none;
+  }
+  #pending-panel h3 { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: #7a4f00; margin: 0; }
+  #pending-header { cursor: pointer; display: flex; align-items: center; justify-content: space-between; user-select: none; }
+  #pending-count { background: #7a4f00; color: #fff; font-size: 11px; font-weight: 700; border-radius: 10px; padding: 1px 8px; min-width: 20px; text-align: center; }
+  #pending-body { margin-top: 10px; }
+  #pending-panel p { font-size: 12px; color: #5e6c84; margin-bottom: 10px; }
+  #pending-list { font-size: 12px; color: #172b4d; list-style: disc; padding-left: 18px; line-height: 1.8; margin-bottom: 14px; }
+  #apply-btn {
+    background: #0052cc; color: #fff; border: none; border-radius: 4px;
+    padding: 8px 18px; font-size: 13px; font-weight: 600; cursor: pointer;
+  }
+  #apply-btn:hover { background: #0065ff; }
+  #apply-btn:disabled { background: #97a0af; cursor: default; }
+  #discard-btn { background: #bf2600; color: #fff; border: none; border-radius: 4px;
+    padding: 8px 18px; font-size: 13px; font-weight: 600; cursor: pointer; }
+  #discard-btn:hover { background: #de350b; }
+
+  /* Context menu */
+  .ctx-menu { position: fixed; z-index: 2000; background: #fff; border: 1px solid #dfe1e6;
+    border-radius: 4px; box-shadow: 0 4px 12px rgba(0,0,0,.15); padding: 4px 0; min-width: 180px; font-size: 13px; }
+  .ctx-menu-header { padding: 6px 12px; font-size: 11px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: .5px; color: #5e6c84; }
+  .ctx-menu-item { padding: 6px 12px; cursor: pointer; white-space: nowrap; }
+  .ctx-menu-item:hover { background: #ebecf0; }
+
+  /* Editable Eff% input in capacity table */
+  .eff-input {
+    width: 42px; text-align: right; font-size: 12px; font-family: inherit;
+    border: none; border-bottom: 1px dashed #c1c7d0; background: transparent;
+    outline: none; padding: 0; color: inherit;
+    -moz-appearance: textfield;
+  }
+  .eff-input:focus { border-bottom-color: #0052cc; }
+  .eff-input::-webkit-inner-spin-button, .eff-input::-webkit-outer-spin-button { -webkit-appearance: none; }
+
+  .deduct-input {
+    width: 38px; text-align: right; font-size: 12px; font-family: inherit;
+    border: none; border-bottom: 1px dashed #c1c7d0; background: transparent;
+    outline: none; padding: 0; color: inherit;
+    -moz-appearance: textfield;
+  }
+  .deduct-input:focus { border-bottom-color: #0052cc; }
+  .deduct-input::-webkit-inner-spin-button, .deduct-input::-webkit-outer-spin-button { -webkit-appearance: none; }
+  .deduct-input.has-value { color: #bf2600; }
+
+  /* Editable buffer input styled as stat value */
+  .val-input {
+    font-size: 28px; font-weight: 700; color: #7a4f00;
+    background: transparent; border: none; border-bottom: 2px dashed #f6c342;
+    width: 80px; text-align: center; outline: none; padding: 0;
+    font-family: inherit;
+  }
+  .val-input:focus { border-bottom-color: #ff8b00; }
+  /* hide number spinners */
+  .val-input::-webkit-inner-spin-button, .val-input::-webkit-outer-spin-button { -webkit-appearance: none; }
+  .val-input { -moz-appearance: textfield; }
+
+  /* Editable SP and Assignee inputs in issue rows */
+  .sp-edit {
+    width: 38px; text-align: right; font-size: 13px; font-family: inherit;
+    border: none; border-bottom: 1px dashed #c1c7d0; background: transparent;
+    outline: none; padding: 0; -moz-appearance: textfield;
+  }
+  .sp-edit:focus { border-bottom-color: #0052cc; }
+  .sp-edit::-webkit-inner-spin-button, .sp-edit::-webkit-outer-spin-button { -webkit-appearance: none; }
+  .assignee-edit {
+    font-size: 13px; font-family: inherit; width: 100%; max-width: 130px;
+    border: none; border-bottom: 1px dashed #c1c7d0; background: transparent;
+    outline: none; padding: 0; cursor: pointer; -webkit-appearance: none; appearance: none;
+    text-overflow: ellipsis; overflow: hidden;
+  }
+  .assignee-edit:focus { border-bottom-color: #0052cc; }
+
+  /* Committed cell flash on update */
+  @keyframes cellFlash { 0%,100% { background: transparent; } 30% { background: #fffae6; } }
+  .flash { animation: cellFlash 1s ease; }
+
+  /* Loading row */
+  @keyframes loadingPulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+  .loading-row td { text-align: center; padding: 24px; font-size: 13px; font-weight: 500; color: #0052cc; }
+  .loading-row td::before { content: '⏳ '; }
+  .loading-row td { animation: loadingPulse 1.4s ease-in-out infinite; }
+
+  /* Refresh SP button */
+  #refresh-btn {
+    background: #fff; color: #172b4d; border: 1px solid #dfe1e6; border-radius: 4px;
+    padding: 6px 14px; font-size: 12px; font-weight: 500; cursor: pointer; margin-left: 12px;
+  }
+  #refresh-btn:hover { background: #f4f5f7; }
+  #refresh-btn:disabled { color: #97a0af; cursor: default; }
+
+  /* ── Startup check overlay ── */
+  #startup-overlay {
+    position: fixed; inset: 0; background: rgba(9,30,66,.55);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 9999; transition: opacity .3s;
+  }
+  #startup-overlay.hidden { opacity: 0; pointer-events: none; }
+  #startup-card {
+    background: #fff; border-radius: 8px; padding: 28px 32px; min-width: 360px;
+    box-shadow: 0 8px 32px rgba(0,0,0,.22);
+  }
+  #startup-card h2 { font-size: 14px; font-weight: 700; color: #172b4d; margin-bottom: 18px; }
+  .svc-row { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 14px; }
+  .svc-icon { font-size: 16px; line-height: 1.4; flex-shrink: 0; width: 20px; text-align: center; }
+  .svc-body { flex: 1; }
+  .svc-name { font-weight: 600; font-size: 13px; color: #172b4d; }
+  .svc-hint { font-size: 12px; color: #5e6c84; margin-top: 3px; }
+  .svc-hint code { background: #f4f5f7; padding: 1px 5px; border-radius: 3px; font-family: monospace; font-size: 11px; }
+  .svc-hint.err { color: #bf2600; }
+</style>
+</head>
+<body>
+
+<!-- ═══ STARTUP CHECK OVERLAY ═══ -->
+<div id="startup-overlay">
+  <div id="startup-card">
+    <h2>Checking required services…</h2>
+    <div class="svc-row" id="svc-server">
+      <div class="svc-icon" id="svc-server-icon">⏳</div>
+      <div class="svc-body">
+        <div class="svc-name">sprint-server.py</div>
+        <div class="svc-hint" id="svc-server-hint">Connecting to localhost:5000…</div>
+      </div>
+    </div>
+    <div class="svc-row" id="svc-jira">
+      <div class="svc-icon" id="svc-jira-icon">⏳</div>
+      <div class="svc-body">
+        <div class="svc-name">Jira API</div>
+        <div class="svc-hint" id="svc-jira-hint">Waiting for server…</div>
+      </div>
+    </div>
+    <div class="svc-row">
+      <div class="svc-icon" id="svc-docker-icon">⏳</div>
+      <div class="svc-body">
+        <div class="svc-name">Docker Desktop <span style="font-weight:400;color:#5e6c84;">(mcp-jira)</span></div>
+        <div class="svc-hint" id="svc-docker-hint">Checking…</div>
+      </div>
+    </div>
+    <div class="svc-row">
+      <div class="svc-icon" id="svc-confluence-icon">⏳</div>
+      <div class="svc-body">
+        <div class="svc-name">Confluence MCP <span style="font-weight:400;color:#5e6c84;">(mcp.atlassian.com)</span></div>
+        <div class="svc-hint" id="svc-confluence-hint">Checking…</div>
+      </div>
+    </div>
+    <div class="svc-row" id="svc-absences" style="display:none;">
+      <div class="svc-icon" id="svc-absences-icon">⏳</div>
+      <div class="svc-body">
+        <div class="svc-name">Workday Absences</div>
+        <div class="svc-hint" id="svc-absences-hint">Checking cache…</div>
+      </div>
+    </div>
+    <div class="svc-row" id="svc-pa" style="display:none;">
+      <div class="svc-icon" id="svc-pa-icon">⏳</div>
+      <div class="svc-body">
+        <div class="svc-name">PA Schedule <span style="font-weight:400;color:#5e6c84;">(Confluence)</span></div>
+        <div class="svc-hint" id="svc-pa-hint">Checking cache…</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ HEADER ═══ -->
+<div class="header" style="display:flex;align-items:flex-start;justify-content:space-between;">
+  <div>
+    <h1 id="page-title">Sprint Capacity Plan — Loading…</h1>
+    <div class="meta">
+      <span id="meta-dates">📅 Loading…</span>
+      <span id="meta-working-days">⏱ — working days</span>
+      <span id="meta-holidays">🏖 — holidays</span>
+    </div>
+  </div>
+  <button id="settings-btn" title="Settings" style="background:none;border:none;color:rgba(255,255,255,0.85);font-size:20px;cursor:pointer;padding:4px 8px;margin-top:2px;" onclick="openSettings()">&#9881;</button>
+</div>
+
+<div class="container">
+
+<div class="col-left">
+  <!-- ═══ SECTION 1: CAPACITY TABLE ═══ -->
+  <div class="card">
+    <div class="card-header">
+      <h2>Individual Capacity</h2>
+      <span class="source-note">Absences from Workday · Other deductions: enter manually</span>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th>Person</th>
+          <th class="num">Absence</th>
+          <th class="num pa-col" id="pa-col-header"><a id="pa-col-link" href="" target="_blank" title="Open PA schedule in Confluence" style="color:inherit;text-decoration:none;border-bottom:1px dashed rgba(0,0,0,0.3);">PA</a></th>
+          <th class="num">KTLO</th>
+          <th class="num">Events</th>
+          <th class="num">Hack.</th>
+          <th class="num">Training</th>
+          <th class="num">Avail</th>
+          <th class="num">Eff%</th>
+          <th class="num">Cap (SP)</th>
+          <th class="num">Committed</th>
+        </tr>
+      </thead>
+      <tbody id="capacity-body">
+        <!-- Person rows are generated dynamically by buildCapacityRows() -->
+        <tr class="total-row">
+          <td>Team Total</td>
+          <td class="num" id="total-absence">0</td>
+          <td class="num pa-col" id="total-pa">0</td>
+          <td class="num" id="total-ktlo">0</td>
+          <td class="num" id="total-events">0</td>
+          <td class="num" id="total-hack">0</td>
+          <td class="num" id="total-training">0</td>
+          <td class="num" id="total-avail">80.0</td>
+          <td class="num">—</td>
+          <td class="num capacity" id="total-capacity">35.9</td>
+          <td class="num" id="total-committed">0</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ═══ SECTION 2: TEAM SUMMARY ═══ -->
+  <div class="card">
+    <div class="card-header"><h2>Team Summary</h2></div>
+    <div class="card-body">
+      <div class="summary-grid">
+        <div class="stat highlight">
+          <div class="val" id="stat-gross">—</div>
+          <div class="lbl">Gross Capacity (SP)</div>
+        </div>
+        <div class="stat warn">
+          <input id="buffer-input" class="val val-input" type="number" min="0" step="0.5" value="5">
+          <div class="lbl">Unscheduled Buffer (SP)</div>
+        </div>
+        <div class="stat good">
+          <div class="val" id="stat-net">—</div>
+          <div class="lbl">Net Available (SP)</div>
+        </div>
+        <div class="stat" id="stat-committed-box">
+          <div class="val" id="stat-committed">0.0</div>
+          <div class="lbl">Committed (SP)</div>
+        </div>
+      </div>
+
+      <!-- Headroom bar -->
+      <div style="margin-top:20px;">
+        <div id="headroom-text" style="font-size:12px;color:#5e6c84;margin-bottom:4px;">
+          Headroom: <strong style="color:#006644;">— SP</strong>
+          &nbsp;·&nbsp; 0.0 committed of — available
+        </div>
+        <div class="headroom-bar">
+          <div class="headroom-fill" id="headroom-fill" style="width:0%;background:#0052cc;"></div>
+        </div>
+        <div class="headroom-label">
+          <span id="headroom-left">0 committed</span>
+          <span id="headroom-right">— SP available</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ PENDING CHANGES PANEL ═══ -->
+  <div id="pending-panel">
+    <div id="pending-header">
+      <h3><span id="pending-chevron">▶</span> Pending Jira Changes</h3>
+      <span id="pending-count">0</span>
+    </div>
+    <div id="pending-body" style="display:none;">
+      <div style="display:flex;gap:8px;margin-bottom:10px;align-items:center;">
+        <button id="apply-btn" onclick="applyToJira()">Apply to Jira</button>
+        <button id="refresh-btn" onclick="refreshTasks()">↻ Refresh Tasks</button>
+        <span style="flex:1;"></span>
+        <button id="discard-btn" onclick="discardAll()">Discard All</button>
+      </div>
+      <p>Changes queued locally — click Apply to sync with Jira.</p>
+      <ul id="pending-list"></ul>
+    </div>
+  </div>
+
+</div><!-- /col-left -->
+
+<div class="col-right">
+  <!-- ═══ SECTION 3: SPRINT COMMITMENT ═══ -->
+  <div class="card" id="sprint-commit-card">
+    <div class="card-header">
+      <h2 id="sprint-commit-title">Sprint Commitment — Loading…</h2>
+      <span class="source-note" id="sprint-commit-note">0 issues · 0 SP committed</span>
+    </div>
+    <div id="sprint-commit-empty" class="empty-state">Drop issues here to commit them to this sprint</div>
+    <table id="sprint-commit-table" style="display:none;">
+      <thead>
+        <tr>
+          <th>Key</th>
+          <th>Summary</th>
+          <th>Type</th>
+          <th>Assignee</th>
+          <th class="num">SP</th>
+          <th>Priority</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody class="droppable" id="sprint-commit-body" data-sprint-id=""></tbody>
+    </table>
+  </div>
+
+  <!-- ═══ BACKLOG SECTIONS (dynamically generated) ═══ -->
+  <div id="backlog-container"></div>
+
+
+</div><!-- /col-right -->
+
+</div><!-- /container -->
+
+<!-- Toast -->
+<div id="toast"></div>
+
+<!-- ═══ SETTINGS MODAL ═══ -->
+<div id="settings-overlay" style="display:none;position:fixed;inset:0;background:rgba(9,30,66,.54);z-index:1000;display:none;align-items:center;justify-content:center;">
+  <div style="background:#fff;border-radius:8px;box-shadow:0 8px 24px rgba(9,30,66,.25);width:540px;max-height:80vh;overflow-y:auto;padding:28px 32px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">
+      <h2 style="font-size:18px;font-weight:600;color:#172b4d;margin:0;">Settings</h2>
+      <button onclick="closeSettings()" style="background:none;border:none;font-size:20px;cursor:pointer;color:#5e6c84;padding:0 4px;">&times;</button>
+    </div>
+
+    <!-- Board URL -->
+    <div style="margin-bottom:20px;">
+      <label style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:#5e6c84;display:block;margin-bottom:6px;">Jira Board</label>
+      <input id="settings-board-url" type="text" placeholder="https://jira.autodesk.com/secure/RapidBoard.jspa?rapidView=12345" style="width:100%;padding:8px 10px;border:1px solid #dfe1e6;border-radius:3px;font-size:13px;box-sizing:border-box;">
+      <div id="settings-board-id" style="margin-top:4px;font-size:12px;color:#5e6c84;"></div>
+    </div>
+
+    <!-- Team Members -->
+    <div style="margin-bottom:20px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+        <label style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:#5e6c84;">Team Members</label>
+        <button id="settings-refresh-team" onclick="refreshTeamFromWorkday(this)" style="background:#0052cc;color:#fff;border:none;border-radius:3px;padding:4px 12px;font-size:11px;font-weight:600;cursor:pointer;">Refresh from Workday</button>
+      </div>
+      <div id="settings-team-list" style="border:1px solid #dfe1e6;border-radius:3px;padding:8px 12px;min-height:40px;font-size:13px;color:#172b4d;background:#fafbfc;max-height:180px;overflow-y:auto;">
+        <span style="color:#5e6c84;">Loading...</span>
+      </div>
+      <div id="settings-team-status" style="margin-top:4px;font-size:12px;color:#5e6c84;"></div>
+    </div>
+
+    <!-- PA Schedule -->
+    <div style="margin-bottom:20px;">
+      <label style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:#5e6c84;display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+        <input id="settings-pa-enabled" type="checkbox" style="margin:0;"> PA Schedule (Promotion Analysis)
+      </label>
+      <div id="settings-pa-url-row" style="display:none;">
+        <input id="settings-pa-url" type="text" placeholder="https://autodesk.atlassian.net/wiki/spaces/.../pages/..." style="width:100%;padding:8px 10px;border:1px solid #dfe1e6;border-radius:3px;font-size:13px;box-sizing:border-box;">
+        <div style="margin-top:4px;font-size:12px;color:#5e6c84;">Confluence page URL with the PA schedule table</div>
+      </div>
+    </div>
+
+    <!-- Unscheduled Buffer -->
+    <div style="margin-bottom:20px;">
+      <label for="settings-buffer" style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:#5e6c84;display:block;margin-bottom:6px;">Default Unscheduled Buffer (SP)</label>
+      <input id="settings-buffer" type="number" min="0" step="0.5" value="5" style="width:80px;padding:8px 10px;border:1px solid #dfe1e6;border-radius:3px;font-size:13px;box-sizing:border-box;">
+      <div style="margin-top:4px;font-size:12px;color:#5e6c84;">Team-level reserve for unplanned work. Can be overridden per-session in the capacity summary.</div>
+    </div>
+
+    <!-- Backlog Sprints -->
+    <div style="margin-bottom:24px;">
+      <label style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:#5e6c84;display:block;margin-bottom:6px;">Backlog Sprints</label>
+      <div id="settings-backlog-list" style="border:1px solid #dfe1e6;border-radius:3px;padding:8px 12px;min-height:40px;font-size:13px;background:#fafbfc;max-height:180px;overflow-y:auto;">
+        <span style="color:#5e6c84;">Available after Jira connects</span>
+      </div>
+    </div>
+
+    <!-- Actions -->
+    <div style="display:flex;justify-content:flex-end;gap:8px;">
+      <button onclick="closeSettings()" style="background:transparent;color:#42526e;border:1px solid #dfe1e6;border-radius:3px;padding:6px 16px;font-size:13px;cursor:pointer;">Cancel</button>
+      <button onclick="saveSettings()" style="background:#0052cc;color:#fff;border:none;border-radius:3px;padding:6px 16px;font-size:13px;font-weight:600;cursor:pointer;">Save</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  let GROSS_CAPACITY = 0;
+  let SPRINT_ID = null;
+  let NET_AVAILABLE = 0;
+
+  let dragRow = null;
+  let toastTimer = null;
+
+  // Team config loaded from /api/config (populated during startup)
+  var teamConfig = { team: [], efficiency: { 'default': 70 } };
+
+  // pendingMoves: Map of issueKey → { issueKey, targetSprintId, originalSprintId, label }
+  // Only stores net change vs. original sprint. Cleared out if user drags back to origin.
+  var pendingMoves = {};
+  // pendingEdits: Map of issueKey → { sp?, assignee?, priority?, priority_id? }
+  var pendingEdits = {};
+
+  function savePendingToStorage() {
+    localStorage.setItem('sprintplanner-pending', JSON.stringify({ moves: pendingMoves, edits: pendingEdits }));
+  }
+  function loadPendingFromStorage() {
+    try {
+      var raw = localStorage.getItem('sprintplanner-pending');
+      if (!raw) return;
+      var data = JSON.parse(raw);
+      if (data.moves) pendingMoves = data.moves;
+      if (data.edits) pendingEdits = data.edits;
+    } catch(e) {}
+  }
+  function clearPendingStorage() {
+    localStorage.removeItem('sprintplanner-pending');
+  }
+
+  function flashCell(el) {
+    el.classList.remove('flash');
+    void el.offsetWidth;
+    el.classList.add('flash');
+  }
+
+  // ── Buffer input ──
+  var bufferInput = document.getElementById('buffer-input');
+  bufferInput.addEventListener('input', function () {
+    var raw = parseFloat(this.value);
+    if (isNaN(raw) || raw < 0) raw = 0;
+    if (raw > GROSS_CAPACITY) raw = GROSS_CAPACITY;
+    var net = Math.round((GROSS_CAPACITY - raw) * 10) / 10;
+    if (net < 0) { raw = GROSS_CAPACITY; net = 0; }
+    NET_AVAILABLE = net;
+    recalculate();
+  });
+
+  // ── Capacity recompute ──
+  function recomputeCapacity(row) {
+    var workingDays = parseFloat(row.dataset.workingDays) || 10;
+    var deductions = 0;
+    row.querySelectorAll('.deduct-input').forEach(function(inp) {
+      var v = parseFloat(inp.value);
+      if (isNaN(v) || v < 0) v = 0;
+      deductions += v;
+    });
+    var avail = Math.max(0, workingDays - deductions);
+    row.querySelector('.avail-display').textContent = avail.toFixed(1);
+
+    var input = row.querySelector('.eff-input');
+    var eff = parseFloat(input.value);
+    if (isNaN(eff) || eff < 0) eff = 0;
+    if (eff > 100) eff = 100;
+    input.value = eff;
+    var cap = Math.max(0, Math.round((workingDays * eff / 100 - deductions) * 10) / 10);
+    var cell = row.querySelector('.person-capacity');
+    cell.textContent = cap.toFixed(1);
+    cell.className = 'num capacity person-capacity ' + (cap === 0 ? 'zero' : cap < 3 ? 'low' : 'full');
+  }
+
+  function recomputeTeamCapacity() {
+    var total = 0;
+    var totals = { absence:0, pa:0, ktlo:0, events:0, hack:0, training:0 };
+    var totalAvail = 0;
+    document.querySelectorAll('[data-person]').forEach(function (row) {
+      total += parseFloat(row.querySelector('.person-capacity').textContent) || 0;
+      totalAvail += parseFloat(row.querySelector('.avail-display').textContent) || 0;
+      row.querySelectorAll('.deduct-input').forEach(function(inp) {
+        totals[inp.dataset.col] += parseFloat(inp.value) || 0;
+      });
+    });
+    total = Math.round(total * 10) / 10;
+    document.getElementById('total-capacity').textContent = total.toFixed(1);
+    document.getElementById('stat-gross').textContent = total.toFixed(1);
+    // Update total row deduction cells
+    ['absence','pa','ktlo','events','hack','training'].forEach(function(col) {
+      var el = document.getElementById('total-' + col);
+      if (el) el.textContent = totals[col] > 0 ? totals[col].toFixed(1) : '0';
+    });
+    var availEl = document.getElementById('total-avail');
+    if (availEl) availEl.textContent = totalAvail.toFixed(1);
+
+    GROSS_CAPACITY = total;
+    // clamp buffer so net can't go negative
+    var bufferVal = parseFloat(bufferInput.value) || 0;
+    if (bufferVal > GROSS_CAPACITY) { bufferVal = GROSS_CAPACITY; bufferInput.value = bufferVal; }
+    NET_AVAILABLE = Math.round((GROSS_CAPACITY - bufferVal) * 10) / 10;
+    recalculate();
+  }
+
+  function toggleHasValue(inp) {
+    var v = parseFloat(inp.value);
+    inp.classList.toggle('has-value', v > 0);
+  }
+
+  function wireCapacityInputs(row) {
+    row.querySelectorAll('.eff-input').forEach(function (input) {
+      input.addEventListener('input', function () {
+        recomputeCapacity(this.closest('tr'));
+        recomputeTeamCapacity();
+      });
+      input.addEventListener('change', function () {
+        // Persist efficiency to config
+        var person = this.closest('tr').dataset.person;
+        var val = parseInt(this.value) || 0;
+        fetch('http://localhost:5000/api/efficiency', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: person, value: val })
+        }).catch(function() {});
+      });
+    });
+    row.querySelectorAll('.deduct-input').forEach(function (input) {
+      input.addEventListener('input', function () {
+        var v = parseFloat(this.value);
+        if (v < 0) { this.value = 0; }
+        toggleHasValue(this);
+        recomputeCapacity(this.closest('tr'));
+        recomputeTeamCapacity();
+      });
+      input.addEventListener('blur', function () {
+        if (this.value === '') { this.value = 0; toggleHasValue(this); }
+      });
+    });
+  }
+
+  var DEDUCT_COLS = ['absence', 'pa', 'ktlo', 'events', 'hack', 'training'];
+
+  function applyPAVisibility() {
+    var enabled = teamConfig.pa_enabled !== false;
+    // Update PA column link href
+    var link = document.getElementById('pa-col-link');
+    if (link) link.href = teamConfig.pa_confluence_url || '';
+    // Show/hide PA header, total, and all person PA cells
+    document.querySelectorAll('.pa-col').forEach(function(el) {
+      el.style.display = enabled ? '' : 'none';
+    });
+    // If disabled, zero out all PA inputs and recompute
+    if (!enabled) {
+      document.querySelectorAll('.deduct-input[data-col="pa"]').forEach(function(inp) {
+        inp.value = 0;
+      });
+      document.querySelectorAll('[data-person]').forEach(function(row) {
+        recomputeCapacity(row);
+      });
+      recomputeTeamCapacity();
+    }
+  }
+
+  function buildCapacityRows(team, effMap) {
+    var tbody = document.getElementById('capacity-body');
+    // Remove existing person rows (keep total-row)
+    tbody.querySelectorAll('tr[data-person]').forEach(function(r) { r.remove(); });
+    var totalRow = tbody.querySelector('.total-row');
+    var defaultEff = effMap['default'] || 70;
+
+    team.forEach(function(name) {
+      var eff = (name in effMap) ? effMap[name] : defaultEff;
+      var tr = document.createElement('tr');
+      tr.dataset.person = name;
+      tr.dataset.workingDays = '10';
+      var html = '<td class="person">' + name + '</td>';
+      DEDUCT_COLS.forEach(function(col) {
+        var extraCls = col === 'pa' ? ' pa-col' : '';
+        html += '<td class="num' + extraCls + '"><input class="deduct-input" type="number" min="0" step="0.5" value="0" data-col="' + col + '"></td>';
+      });
+      html += '<td class="num avail-display">10.0</td>';
+      html += '<td class="num"><input class="eff-input" type="number" min="0" max="100" step="1" value="' + eff + '">%</td>';
+      var cap = (10 * eff / 100).toFixed(1);
+      var cls = eff === 0 ? 'zero' : (10 * eff / 100) < 3 ? 'low' : 'full';
+      html += '<td class="num capacity ' + cls + ' person-capacity">' + cap + '</td>';
+      html += '<td class="num person-committed deduct-zero">0</td>';
+      tr.innerHTML = html;
+      tbody.insertBefore(tr, totalRow);
+      wireCapacityInputs(tr);
+    });
+  }
+
+  // ── Drop handler shared logic ──
+  function handleDrop(tbody, e) {
+    e.preventDefault();
+    tbody.classList.remove('drop-over');
+    if (!dragRow) return;
+    if (dragRow.parentElement === tbody) return;
+
+    var targetSprintId = parseInt(tbody.dataset.sprintId);
+    tbody.appendChild(dragRow);
+    updateCommitVisibility();
+    recalculate();
+    var summary = dragRow.querySelectorAll('td')[1].textContent.trim();
+    queueMove(dragRow.dataset.key, targetSprintId, dragRow.dataset.sourceSprint, summary);
+  }
+
+  // ── Make all droppable tbodies accept drops ──
+  document.querySelectorAll('tbody.droppable').forEach(function (tbody) {
+    tbody.addEventListener('dragover', function (e) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      tbody.classList.add('drop-over');
+    });
+    tbody.addEventListener('dragleave', function (e) {
+      if (!tbody.contains(e.relatedTarget)) tbody.classList.remove('drop-over');
+    });
+    tbody.addEventListener('drop', function (e) { handleDrop(tbody, e); });
+  });
+
+  // ── Also allow dropping on the empty-state div ──
+  const emptyState = document.getElementById('sprint-commit-empty');
+  const commitBody = document.getElementById('sprint-commit-body');
+
+  emptyState.addEventListener('dragover', function (e) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    emptyState.style.background = '#e6f0ff';
+  });
+  emptyState.addEventListener('dragleave', function () {
+    emptyState.style.background = '';
+  });
+  emptyState.addEventListener('drop', function (e) {
+    emptyState.style.background = '';
+    handleDrop(commitBody, e);
+  });
+
+  // ── Drag events ──
+  function wireDragEvents(row) {
+    row.addEventListener('dragstart', function (e) {
+      dragRow = row;
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', row.dataset.key);
+      setTimeout(function () { row.classList.add('dragging'); }, 0);
+    });
+    row.addEventListener('dragend', function () {
+      row.classList.remove('dragging');
+      dragRow = null;
+    });
+    row.addEventListener('contextmenu', function (e) {
+      e.preventDefault();
+      showMoveMenu(row, e.clientX, e.clientY);
+    });
+  }
+  document.querySelectorAll('tr[draggable="true"]').forEach(wireDragEvents);
+
+  // ── Right-click context menu for moving tasks ──
+  var activeCtxMenu = null;
+  function closeMoveMenu() {
+    if (activeCtxMenu) { activeCtxMenu.remove(); activeCtxMenu = null; }
+  }
+  function showMoveMenu(row, x, y) {
+    closeMoveMenu();
+    var currentSprintId = row.parentElement.dataset.sprintId;
+    var menu = document.createElement('div');
+    menu.className = 'ctx-menu';
+    var header = document.createElement('div');
+    header.className = 'ctx-menu-header';
+    header.textContent = 'Move to';
+    menu.appendChild(header);
+
+    var destinations = [];
+    // Sprint Commitment first (matches on-screen position)
+    var commitId = document.getElementById('sprint-commit-body').dataset.sprintId;
+    if (currentSprintId !== commitId) {
+      destinations.push({ id: commitId, name: sprintName(parseInt(commitId)) + ' (Commitment)' });
+    }
+    // Backlogs in DOM order (matches on-screen order)
+    document.querySelectorAll('#backlog-container .card[data-backlog-id]').forEach(function(card) {
+      var id = card.dataset.backlogId;
+      if (id === currentSprintId) return;
+      destinations.push({ id: id, name: sprintName(parseInt(id)) });
+    });
+
+    destinations.forEach(function(dest) {
+      var item = document.createElement('div');
+      item.className = 'ctx-menu-item';
+      item.textContent = dest.name;
+      item.addEventListener('click', function() {
+        var targetTbody = document.querySelector('tbody.droppable[data-sprint-id="' + dest.id + '"]');
+        if (targetTbody && row.parentElement !== targetTbody) {
+          targetTbody.appendChild(row);
+          updateCommitVisibility();
+          recalculate();
+          var summary = row.querySelectorAll('td')[1].textContent.trim();
+          queueMove(row.dataset.key, parseInt(dest.id), row.dataset.sourceSprint, summary);
+        }
+        closeMoveMenu();
+      });
+      menu.appendChild(item);
+    });
+
+    menu.style.left = x + 'px';
+    menu.style.top = y + 'px';
+    document.body.appendChild(menu);
+    var rect = menu.getBoundingClientRect();
+    if (rect.right > window.innerWidth) menu.style.left = (x - rect.width) + 'px';
+    if (rect.bottom > window.innerHeight) menu.style.top = (y - rect.height) + 'px';
+    activeCtxMenu = menu;
+    setTimeout(function() {
+      document.addEventListener('click', closeMoveMenu, { once: true });
+    }, 0);
+  }
+
+  // ── Issue row helpers ──
+  function escHtml(s) {
+    return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+  var TYPE_BADGE   = { Story:'story', Bug:'bug', Spike:'spike', Epic:'epic' };
+  var STATUS_BADGE = { 'open':'todo','To Do':'todo','In Progress':'progress',
+                       'Closed':'done','Done':'done','Blocked':'blocked','In Staging':'staging' };
+  var PRI_CLASS    = { Critical:'pri-critical', Blocker:'pri-critical', Major:'pri-major', Minor:'pri-minor', Trivial:'pri-minor' };
+  var JIRA_PRIORITIES = []; // [{id, name, iconUrl, localIcon}, ...] — populated from /api/priorities
+
+  function priIconHtml(issue) {
+    // Find local icon from JIRA_PRIORITIES cache, or from issue data
+    var iconPath = issue.priority_icon_local || '';
+    if (!iconPath && JIRA_PRIORITIES.length) {
+      for (var i = 0; i < JIRA_PRIORITIES.length; i++) {
+        if (JIRA_PRIORITIES[i].name === issue.priority) { iconPath = JIRA_PRIORITIES[i].localIcon || ''; break; }
+      }
+    }
+    return iconPath ? '<img src="' + escHtml(iconPath) + '" class="pri-icon"> ' : '';
+  }
+
+  function buildIssueRow(issue) {
+    var sp   = issue.sp != null ? parseFloat(issue.sp) : 0;
+    var asgn = issue.assignee_display || '';
+    var type = TYPE_BADGE[issue.type]     || 'story';
+    var stat = STATUS_BADGE[issue.status] || 'todo';
+    var pri  = PRI_CLASS[issue.priority]  || 'pri-minor';
+    var tr   = document.createElement('tr');
+    tr.draggable = true;
+    tr.dataset.key          = issue.key;
+    tr.dataset.sp           = issue.sp != null ? sp : '';
+    tr.dataset.assignee     = asgn;
+    tr.dataset.assigneeKey  = issue.assignee_name || '';
+    tr.dataset.priority     = issue.priority || '';
+    tr.dataset.priorityId   = issue.priority_id || '';
+    tr.dataset.sourceSprint = String(issue.sprint_id);
+    tr.innerHTML =
+      '<td><a href="https://jira.autodesk.com/browse/' + issue.key + '" target="_blank">' + issue.key + '</a></td>' +
+      '<td>' + escHtml(issue.summary) + '</td>' +
+      '<td><span class="badge badge-' + type + '">' + escHtml(issue.type) + '</span></td>' +
+      '<td>' + escHtml(asgn) + '</td>' +
+      '<td class="num">' + (sp > 0 ? sp : '—') + '</td>' +
+      '<td class="' + pri + '">' + priIconHtml(issue) + escHtml(issue.priority) + '</td>' +
+      '<td><span class="badge badge-' + stat + '">' + escHtml(issue.status) + '</span></td>';
+    return tr;
+  }
+
+  // Remove a pending edit field if reverted to original; delete the key if all fields are clean.
+  function cleanPendingEdit(key) {
+    var edit = pendingEdits[key];
+    if (!edit) return;
+    var row = document.querySelector('tr[data-key="' + key + '"]');
+    if (!row) return;
+    if ('sp' in edit) {
+      var origSPval = row.dataset.origSp === '' ? null : parseFloat(row.dataset.origSp);
+      if (edit.sp === origSPval) delete edit.sp;
+    }
+    if ('assignee' in edit) {
+      if (edit.assignee === (row.dataset.origAssignee || '')) delete edit.assignee;
+    }
+    if ('priority' in edit) {
+      if (edit.priority === (row.dataset.origPriority || '')) { delete edit.priority; delete edit.priority_id; }
+    }
+    if (!Object.keys(edit).length) delete pendingEdits[key];
+    savePendingToStorage();
+  }
+
+  function makeIssueRowEditable(row) {
+    var tds = row.querySelectorAll('td');
+
+    // Snapshot Jira state for revert detection
+    row.dataset.origSp       = row.dataset.sp;
+    row.dataset.origAssignee = row.dataset.assignee || '';
+    row.dataset.origPriority = row.dataset.priority || '';
+
+    // ── Assignee (col 3) ──
+    var TEAM_MEMBERS = [''].concat(teamConfig.team || []);
+    var assigneeCell = tds[3];
+    var assigneeVal  = row.dataset.assignee || '';
+    var asgSelect    = document.createElement('select');
+    asgSelect.className = 'assignee-edit';
+    asgSelect.draggable = false;
+    TEAM_MEMBERS.forEach(function (name) {
+      var opt = document.createElement('option');
+      opt.value = opt.textContent = name;
+      if (name === assigneeVal) opt.selected = true;
+      asgSelect.appendChild(opt);
+    });
+    asgSelect.addEventListener('mousedown', function (e) { e.stopPropagation(); });
+    asgSelect.addEventListener('change', function () {
+      var val = this.value;
+      var old = row.dataset.assignee;
+      row.dataset.assignee = val;
+      if (val !== old) {
+        var key = row.dataset.key;
+        if (!pendingEdits[key]) pendingEdits[key] = {};
+        pendingEdits[key].assignee = val;
+        cleanPendingEdit(key);
+        renderPendingPanel();
+        recalculate();
+      }
+    });
+    assigneeCell.textContent = '';
+    assigneeCell.appendChild(asgSelect);
+
+    // ── Priority (col 5) ──
+    if (JIRA_PRIORITIES.length) {
+      var priCell = tds[5];
+      var priVal  = row.dataset.priority || '';
+      var allowedPri = ['Showstopper', 'Critical', 'Major', 'Minor', 'None'];
+      // Build custom dropdown with icons
+      var picker = document.createElement('span');
+      picker.className = 'pri-picker';
+      picker.draggable = false;
+      // Find current icon
+      var curP = JIRA_PRIORITIES.filter(function (p) { return p.name === priVal; })[0];
+      var labelHtml = (curP && curP.localIcon ? '<img src="' + curP.localIcon + '" class="pri-icon">' : '') +
+                      '<span class="pri-label">' + (priVal || 'None') + '</span><span class="pri-caret">▾</span>';
+      picker.innerHTML = labelHtml;
+      // Menu
+      var menu = document.createElement('div');
+      menu.className = 'pri-menu';
+      allowedPri.forEach(function (name) {
+        var p = JIRA_PRIORITIES.filter(function (x) { return x.name === name; })[0];
+        var item = document.createElement('div');
+        item.className = 'pri-menu-item' + (name === priVal ? ' selected' : '');
+        item.dataset.name = name;
+        item.dataset.id = p ? p.id : '';
+        item.dataset.icon = p && p.localIcon ? p.localIcon : '';
+        item.innerHTML = (p && p.localIcon ? '<img src="' + p.localIcon + '">' : '') +
+                         '<span>' + name + '</span>';
+        item.addEventListener('mousedown', function (e) {
+          e.preventDefault(); e.stopPropagation();
+          var val = this.dataset.name;
+          var old = row.dataset.priority;
+          row.dataset.priority = val;
+          row.dataset.priorityId = this.dataset.id || '';
+          // Update picker label
+          var pInfo = JIRA_PRIORITIES.filter(function (x) { return x.name === val; })[0];
+          picker.innerHTML = (pInfo && pInfo.localIcon ? '<img src="' + pInfo.localIcon + '" class="pri-icon">' : '') +
+                             '<span class="pri-label">' + (val || 'None') + '</span><span class="pri-caret">▾</span>';
+          // Update cell color class
+          priCell.className = PRI_CLASS[val] || 'pri-minor';
+          // Update selected state
+          menu.querySelectorAll('.pri-menu-item').forEach(function (mi) {
+            mi.classList.toggle('selected', mi.dataset.name === val);
+          });
+          menu.classList.remove('open');
+          if (val !== old) {
+            var key = row.dataset.key;
+            if (!pendingEdits[key]) pendingEdits[key] = {};
+            pendingEdits[key].priority = val;
+            pendingEdits[key].priority_id = this.dataset.id || '';
+            cleanPendingEdit(key);
+            renderPendingPanel();
+          }
+        });
+        menu.appendChild(item);
+      });
+      picker.appendChild(menu);
+      picker.addEventListener('mousedown', function (e) { e.stopPropagation(); });
+      picker.addEventListener('click', function (e) {
+        var isOpen = menu.classList.contains('open');
+        // Close all other open pri-menus
+        document.querySelectorAll('.pri-menu.open').forEach(function (m) { m.classList.remove('open'); });
+        if (!isOpen) {
+          menu.classList.add('open');
+          // Position fixed menu relative to picker
+          var rect = picker.getBoundingClientRect();
+          var menuH = menu.offsetHeight;
+          var spaceBelow = window.innerHeight - rect.bottom;
+          if (spaceBelow < menuH && rect.top > menuH) {
+            // Open upward
+            menu.style.top = (rect.top - menuH) + 'px';
+          } else {
+            menu.style.top = rect.bottom + 'px';
+          }
+          menu.style.left = rect.left + 'px';
+        }
+      });
+      // Close menu on outside click
+      document.addEventListener('click', function handler(e) {
+        if (!picker.contains(e.target)) menu.classList.remove('open');
+      });
+      priCell.textContent = '';
+      priCell.className = PRI_CLASS[priVal] || 'pri-minor';
+      priCell.appendChild(picker);
+    }
+
+    // ── SP (col 4) ──
+    var spCell  = tds[4];
+    var spVal   = parseFloat(row.dataset.sp) || 0;
+    var spInput = document.createElement('input');
+    spInput.type        = 'number';
+    spInput.className   = 'sp-edit';
+    spInput.min         = '0';
+    spInput.step        = '0.5';
+    spInput.value       = spVal > 0 ? spVal : '';
+    spInput.placeholder = '—';
+    spInput.draggable   = false;
+    spInput.addEventListener('mousedown', function (e) { e.stopPropagation(); });
+    spInput.addEventListener('input', function () {
+      var v     = parseFloat(this.value);
+      var newSP = (isNaN(v) || v < 0) ? null : v;  // null = clear, 0 = zero, n = value
+      var old   = parseFloat(row.dataset.sp); old = isNaN(old) ? null : old;
+      row.dataset.sp = newSP !== null ? newSP : '';
+      if (newSP !== old) {
+        var key = row.dataset.key;
+        if (!pendingEdits[key]) pendingEdits[key] = {};
+        pendingEdits[key].sp = newSP;
+        cleanPendingEdit(key);
+        recalculate();
+        renderPendingPanel();
+      }
+    });
+    spCell.textContent = '';
+    spCell.style.color = '';
+    spCell.appendChild(spInput);
+  }
+
+  // Convert all existing issue rows to editable on load
+  document.querySelectorAll('tr[data-key]').forEach(makeIssueRowEditable);
+
+  // ── Sprint name lookup ──
+  var SPRINT_NAMES = {};
+  function sprintName(id) { return SPRINT_NAMES[id] || 'Sprint ' + id; }
+
+  // ── Backlog management ──
+  var allBacklogs = {};      // {id_str: name} from Jira
+  var selectedBacklogs = {}; // {id_str: true/false} persisted prefs
+
+  function wireDropEvents(tbody) {
+    tbody.addEventListener('dragover', function (e) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      tbody.classList.add('drop-over');
+    });
+    tbody.addEventListener('dragleave', function (e) {
+      if (!tbody.contains(e.relatedTarget)) tbody.classList.remove('drop-over');
+    });
+    tbody.addEventListener('drop', function (e) { handleDrop(tbody, e); });
+  }
+
+  function createBacklogSection(sprintId, name) {
+    var card = document.createElement('div');
+    card.className = 'card';
+    card.id = 'backlog-card-' + sprintId;
+    card.dataset.backlogId = sprintId;
+    card.innerHTML =
+      '<div class="card-header" draggable="true">' +
+        '<h2>' + name + '</h2>' +
+        '<span class="source-note" id="backlog-note-' + sprintId + '">Loading...</span>' +
+      '</div>' +
+      '<table><thead><tr>' +
+        '<th>Key</th><th>Summary</th><th>Type</th><th>Assignee</th><th class="num">SP</th><th>Priority</th><th>Status</th>' +
+      '</tr></thead>' +
+      '<tbody class="droppable" data-sprint-id="' + sprintId + '">' +
+        '<tr class="loading-row"><td colspan="7">Fetching tasks from Jira...</td></tr>' +
+      '</tbody></table>';
+    document.getElementById('backlog-container').appendChild(card);
+    var tbody = card.querySelector('tbody.droppable');
+    wireDropEvents(tbody);
+    wireBacklogDrag(card);
+    return card;
+  }
+
+  // ── Backlog card drag-to-reorder ──
+  var draggedBacklog = null;
+  function wireBacklogDrag(card) {
+    var header = card.querySelector('.card-header');
+    header.addEventListener('dragstart', function (e) {
+      draggedBacklog = card;
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', 'backlog');
+      card.style.opacity = '0.4';
+    });
+    header.addEventListener('dragend', function () {
+      card.style.opacity = '';
+      draggedBacklog = null;
+      document.querySelectorAll('.drag-over-card').forEach(function (c) { c.classList.remove('drag-over-card'); });
+    });
+    card.addEventListener('dragover', function (e) {
+      if (!draggedBacklog || draggedBacklog === card) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      card.classList.add('drag-over-card');
+    });
+    card.addEventListener('dragleave', function () {
+      card.classList.remove('drag-over-card');
+    });
+    card.addEventListener('drop', function (e) {
+      if (!draggedBacklog || draggedBacklog === card) return;
+      e.preventDefault();
+      card.classList.remove('drag-over-card');
+      var container = document.getElementById('backlog-container');
+      // Insert dragged before or after this card based on mouse position
+      var rect = card.getBoundingClientRect();
+      var midY = rect.top + rect.height / 2;
+      if (e.clientY < midY) {
+        container.insertBefore(draggedBacklog, card);
+      } else {
+        container.insertBefore(draggedBacklog, card.nextSibling);
+      }
+      saveBacklogPrefs();
+    });
+  }
+
+  function removeBacklogSection(sprintId) {
+    var card = document.getElementById('backlog-card-' + sprintId);
+    if (card) card.remove();
+    // Clean up pending moves referencing this backlog
+    var sid = parseInt(sprintId);
+    Object.keys(pendingMoves).forEach(function(key) {
+      var m = pendingMoves[key];
+      if (m.targetSprintId === sid) delete pendingMoves[key];
+    });
+    // Remove task rows that originated from this backlog and were dragged elsewhere
+    document.querySelectorAll('tr[data-source-sprint="' + sprintId + '"]').forEach(function(row) {
+      row.remove();
+    });
+    renderPendingPanel();
+    recalculate();
+    updateCommitVisibility();
+  }
+
+  function renderBacklogPopover() {
+    var list = document.getElementById('backlog-popover-list');
+    if (!list) return;
+    list.innerHTML = '';
+    var ids = Object.keys(allBacklogs).sort(function(a, b) {
+      return allBacklogs[a].localeCompare(allBacklogs[b]);
+    });
+    if (ids.length === 0) {
+      list.innerHTML = '<div style="padding:8px 14px;color:#5e6c84;font-size:12px;">No backlogs found</div>';
+      return;
+    }
+    ids.forEach(function(id) {
+      var label = document.createElement('label');
+      label.style.cssText = 'display:flex;align-items:center;gap:8px;padding:5px 14px;cursor:pointer;font-size:13px;';
+      label.onmouseenter = function() { label.style.background = '#f4f5f7'; };
+      label.onmouseleave = function() { label.style.background = ''; };
+      var cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.checked = !!selectedBacklogs[id];
+      cb.dataset.sprintId = id;
+      cb.addEventListener('change', function() {
+        selectedBacklogs[id] = cb.checked;
+        if (cb.checked) {
+          createBacklogSection(id, allBacklogs[id]);
+          refreshTasks(true);
+        } else {
+          removeBacklogSection(id);
+        }
+        saveBacklogPrefs();
+      });
+      label.appendChild(cb);
+      label.appendChild(document.createTextNode(allBacklogs[id]));
+      list.appendChild(label);
+    });
+  }
+
+  function saveBacklogPrefs() {
+    var prefs = { selected: [] };
+    Object.keys(selectedBacklogs).forEach(function(id) {
+      if (selectedBacklogs[id]) prefs.selected.push(id);
+    });
+    // Save visual order from DOM
+    var cards = document.querySelectorAll('#backlog-container .card[data-backlog-id]');
+    prefs.order = [];
+    cards.forEach(function(c) { prefs.order.push(c.dataset.backlogId); });
+    fetch('http://localhost:5000/api/backlog-prefs', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(prefs)
+    }).catch(function() {});
+  }
+
+  function initBacklogs(backlogSprints) {
+    allBacklogs = backlogSprints;
+    return fetch('http://localhost:5000/api/backlog-prefs')
+      .then(function(r) { return r.json(); })
+      .then(function(prefs) {
+        var saved = prefs.selected || [];
+        // If no prefs saved yet, default to all backlogs selected
+        if (saved.length === 0 && Object.keys(allBacklogs).length > 0) {
+          saved = Object.keys(allBacklogs);
+        }
+        selectedBacklogs = {};
+        saved.forEach(function(id) {
+          if (allBacklogs[id]) selectedBacklogs[id] = true;
+        });
+        // Create sections for selected backlogs, respecting saved order
+        var order = prefs.order || [];
+        var ordered = [];
+        order.forEach(function(id) { if (selectedBacklogs[id]) ordered.push(id); });
+        // Append any selected backlogs not in saved order
+        Object.keys(selectedBacklogs).forEach(function(id) {
+          if (selectedBacklogs[id] && ordered.indexOf(id) === -1) ordered.push(id);
+        });
+        ordered.forEach(function(id) {
+          createBacklogSection(id, allBacklogs[id]);
+        });
+        renderBacklogPopover();
+      })
+      .catch(function() {
+        // No prefs — show all
+        selectedBacklogs = {};
+        Object.keys(allBacklogs).forEach(function(id) {
+          selectedBacklogs[id] = true;
+          createBacklogSection(id, allBacklogs[id]);
+        });
+        renderBacklogPopover();
+      });
+  }
+
+  // ── Queue move (deduplicated by issue key) ──
+  function queueMove(issueKey, targetSprintId, originalSprintId, summary) {
+    if (targetSprintId === parseInt(originalSprintId)) {
+      // Dragged back to origin — cancel any pending move for this issue
+      delete pendingMoves[issueKey];
+    } else {
+      var truncated = summary && summary.length > 48 ? summary.slice(0, 47) + '…' : (summary || '');
+      var src  = sprintName(parseInt(originalSprintId));
+      var dest = sprintName(targetSprintId);
+      var label = issueKey + ' · ' + truncated + ' · ' + src + ' → ' + dest;
+      pendingMoves[issueKey] = { issueKey: issueKey, targetSprintId: targetSprintId, originalSprintId: parseInt(originalSprintId), label: label };
+    }
+    savePendingToStorage();
+    renderPendingPanel();
+  }
+
+  // ── Pending panel toggle ──
+  document.getElementById('pending-header').addEventListener('click', function () {
+    var body = document.getElementById('pending-body');
+    var chev = document.getElementById('pending-chevron');
+    var open = body.style.display !== 'none';
+    body.style.display = open ? 'none' : 'block';
+    chev.textContent = open ? '▶' : '▼';
+  });
+
+  // ── Render pending panel ──
+  function renderPendingPanel() {
+    var panel = document.getElementById('pending-panel');
+    var list  = document.getElementById('pending-list');
+    list.innerHTML = '';
+    Object.values(pendingMoves).forEach(function (m) {
+      var li = document.createElement('li');
+      li.textContent = m.label;
+      list.appendChild(li);
+    });
+    Object.keys(pendingEdits).forEach(function (k) {
+      var edit  = pendingEdits[k];
+      var parts = [];
+      if ('sp' in edit)       parts.push('SP → ' + (edit.sp != null ? edit.sp : '—'));
+      if ('assignee' in edit) parts.push('Assignee → ' + (edit.assignee || '(none)'));
+      if ('priority' in edit) parts.push('Priority → ' + edit.priority);
+      var li = document.createElement('li');
+      li.textContent = k + ' · ' + parts.join(', ');
+      list.appendChild(li);
+    });
+    var count = list.children.length;
+    document.getElementById('pending-count').textContent = count;
+    panel.style.display = count > 0 ? 'block' : 'none';
+    document.getElementById('apply-btn').disabled = false;
+  }
+
+  // ── Restore pending state from localStorage after tasks load ──
+  function restorePendingState() {
+    loadPendingFromStorage();
+    // Re-apply moves: move rows to their target tbody
+    Object.keys(pendingMoves).forEach(function(key) {
+      var m = pendingMoves[key];
+      var row = document.querySelector('tr[data-key="' + m.issueKey + '"]');
+      if (!row) { delete pendingMoves[key]; return; }
+      var targetTbody = document.querySelector('tbody.droppable[data-sprint-id="' + m.targetSprintId + '"]');
+      if (!targetTbody) { delete pendingMoves[key]; return; }
+      if (row.parentElement !== targetTbody) targetTbody.appendChild(row);
+    });
+    // Re-apply edits: update row dataset + visible cell values
+    Object.keys(pendingEdits).forEach(function(k) {
+      var row = document.querySelector('tr[data-key="' + k + '"]');
+      if (!row) { delete pendingEdits[k]; return; }
+      var edit = pendingEdits[k];
+      if ('sp' in edit) {
+        row.dataset.sp = edit.sp != null ? edit.sp : '';
+        var spInput = row.querySelector('.sp-edit');
+        if (spInput) spInput.value = edit.sp != null && edit.sp > 0 ? edit.sp : '';
+      }
+      if ('assignee' in edit) {
+        row.dataset.assignee = edit.assignee || '';
+        var aSelect = row.querySelector('.assignee-edit');
+        if (aSelect) aSelect.value = edit.assignee || '';
+      }
+      if ('priority' in edit) {
+        row.dataset.priority = edit.priority || '';
+        row.dataset.priorityId = edit.priority_id || '';
+        var picker = row.querySelector('.pri-picker');
+        if (picker) {
+          var pInfo = JIRA_PRIORITIES.filter(function(x) { return x.name === edit.priority; })[0];
+          var lbl = picker.querySelector('.pri-label');
+          if (lbl) lbl.textContent = edit.priority || 'None';
+          var icon = picker.querySelector('.pri-icon');
+          if (icon && pInfo && pInfo.localIcon) icon.src = pInfo.localIcon;
+        }
+        var priTd = row.querySelectorAll('td')[5];
+        if (priTd) priTd.className = PRI_CLASS[edit.priority] || 'pri-minor';
+      }
+    });
+    savePendingToStorage(); // clean up any orphaned entries
+    updateCommitVisibility();
+    recalculate();
+    renderPendingPanel();
+  }
+
+  // ── Discard all pending changes ──
+  window.discardAll = function() {
+    if (!confirm('Discard all pending changes? This cannot be undone.')) return;
+    // Revert moves: move rows back to original tbody
+    Object.values(pendingMoves).forEach(function(m) {
+      var row = document.querySelector('tr[data-key="' + m.issueKey + '"]');
+      if (!row) return;
+      var origTbody = document.querySelector('tbody.droppable[data-sprint-id="' + m.originalSprintId + '"]');
+      if (origTbody && row.parentElement !== origTbody) origTbody.appendChild(row);
+    });
+    // Revert edits: restore orig values
+    Object.keys(pendingEdits).forEach(function(k) {
+      var row = document.querySelector('tr[data-key="' + k + '"]');
+      if (!row) return;
+      var edit = pendingEdits[k];
+      if ('sp' in edit) {
+        row.dataset.sp = row.dataset.origSp || '';
+        var spInput = row.querySelector('.sp-edit');
+        if (spInput) spInput.value = row.dataset.origSp || '';
+      }
+      if ('assignee' in edit) {
+        row.dataset.assignee = row.dataset.origAssignee || '';
+        var aSelect = row.querySelector('.assignee-edit');
+        if (aSelect) aSelect.value = row.dataset.origAssignee || '';
+      }
+      if ('priority' in edit) {
+        var origPri = row.dataset.origPriority || '';
+        row.dataset.priority = origPri;
+        row.dataset.priorityId = '';
+        var picker = row.querySelector('.pri-picker');
+        if (picker) {
+          var pInfo = JIRA_PRIORITIES.filter(function(x) { return x.name === origPri; })[0];
+          var lbl = picker.querySelector('.pri-label');
+          if (lbl) lbl.textContent = origPri || 'None';
+          var icon = picker.querySelector('.pri-icon');
+          if (icon && pInfo && pInfo.localIcon) icon.src = pInfo.localIcon;
+        }
+        var priTd = row.querySelectorAll('td')[5];
+        if (priTd) priTd.className = PRI_CLASS[origPri] || 'pri-minor';
+      }
+    });
+    pendingMoves = {};
+    pendingEdits = {};
+    clearPendingStorage();
+    updateCommitVisibility();
+    recalculate();
+    renderPendingPanel();
+    showToast('All pending changes discarded', 'info');
+  };
+
+  // ── Apply all pending changes to Jira ──
+  window.applyToJira = function () {
+    var btn = document.getElementById('apply-btn');
+    btn.disabled = true;
+    btn.textContent = 'Applying…';
+
+    var ops = [];
+    Object.values(pendingMoves).forEach(function (m) {
+      ops.push({ type: 'move', key: m.issueKey, move: m });
+    });
+    Object.keys(pendingEdits).forEach(function (k) {
+      ops.push({ type: 'edit', key: k, edit: pendingEdits[k] });
+    });
+
+    if (ops.length === 0) { btn.disabled = false; btn.textContent = 'Apply to Jira'; return; }
+
+    var done = 0, failed = [];
+    function onDone() {
+      done++;
+      if (done === ops.length) {
+        btn.textContent = 'Apply to Jira';
+        if (failed.length === 0) clearPendingStorage();
+        else savePendingToStorage();
+        renderPendingPanel();
+        if (failed.length === 0) showToast('✓ All changes synced to Jira', 'success');
+        else showToast('⚠ ' + failed.length + ' change(s) failed — is sprint-server.py running?', 'warn');
+      }
+    }
+
+    ops.forEach(function (op) {
+      if (op.type === 'move') {
+        fetch('http://localhost:5000/api/move', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ issue_key: op.move.issueKey, sprint_id: op.move.targetSprintId })
+        })
+        .then(function (r) { if (!r.ok) throw new Error(); delete pendingMoves[op.key]; })
+        .catch(function () { failed.push(op.key); })
+        .finally(onDone);
+      } else {
+        var payload = { issue_key: op.key };
+        if ('sp'       in op.edit) payload.sp       = op.edit.sp;
+        if ('assignee' in op.edit) payload.assignee = op.edit.assignee;
+        if ('priority' in op.edit) { payload.priority = op.edit.priority; payload.priority_id = op.edit.priority_id; }
+        fetch('http://localhost:5000/api/edit', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        })
+        .then(function (r) { if (!r.ok) throw new Error(); delete pendingEdits[op.key]; })
+        .catch(function () { failed.push(op.key); })
+        .finally(onDone);
+      }
+    });
+  };
+
+  // ── Toggle sprint commit table / empty state ──
+  function updateCommitVisibility() {
+    var count = commitBody.querySelectorAll('tr').length;
+    var table = document.getElementById('sprint-commit-table');
+    var empty = document.getElementById('sprint-commit-empty');
+    table.style.display = count > 0 ? '' : 'none';
+    empty.style.display = count > 0 ? 'none' : '';
+  }
+
+  // ── Recalculate committed SP + update all live elements ──
+  function recalculate() {
+    var totalCommitted = 0;
+    var committedByPerson = {};
+
+    commitBody.querySelectorAll('tr').forEach(function (row) {
+      var sp = parseFloat(row.dataset.sp) || 0;
+      totalCommitted += sp;
+      var assignee = row.dataset.assignee;
+      if (assignee) {
+        committedByPerson[assignee] = (committedByPerson[assignee] || 0) + sp;
+      }
+    });
+
+    var count = commitBody.querySelectorAll('tr').length;
+
+    document.getElementById('sprint-commit-note').textContent =
+      'Sprint ID ' + SPRINT_ID + ' · ' + count + ' issues · ' + totalCommitted.toFixed(1) + ' SP committed';
+
+    document.getElementById('stat-net').textContent = NET_AVAILABLE.toFixed(1);
+    document.getElementById('stat-committed').textContent = totalCommitted.toFixed(1);
+    var commitBox = document.getElementById('stat-committed-box');
+    commitBox.className = 'stat' + (totalCommitted > NET_AVAILABLE ? ' danger' : totalCommitted > 0 ? ' highlight' : '');
+
+    var headroom = NET_AVAILABLE - totalCommitted;
+    var color = headroom < 0 ? '#bf2600' : '#006644';
+    document.getElementById('headroom-text').innerHTML =
+      'Headroom: <strong style="color:' + color + ';">' +
+      (headroom >= 0 ? '+' : '') + headroom.toFixed(1) + ' SP</strong>' +
+      ' &nbsp;·&nbsp; ' + totalCommitted.toFixed(1) + ' committed of ' + NET_AVAILABLE + ' available';
+
+    var pct = NET_AVAILABLE > 0 ? Math.min(100, (totalCommitted / NET_AVAILABLE) * 100) : 0;
+    var fill = document.getElementById('headroom-fill');
+    fill.style.width = pct + '%';
+    fill.style.background = totalCommitted > NET_AVAILABLE ? '#bf2600' : pct > 80 ? '#ff8b00' : '#0052cc';
+
+    document.getElementById('headroom-left').textContent = totalCommitted.toFixed(1) + ' committed';
+    document.getElementById('headroom-right').textContent = NET_AVAILABLE.toFixed(1) + ' SP available';
+
+    document.querySelectorAll('[data-person]').forEach(function (row) {
+      var person = row.dataset.person;
+      var cell = row.querySelector('.person-committed');
+      if (!cell) return;
+      var c = committedByPerson[person] || 0;
+      var newText = c > 0 ? c.toFixed(1) : '0';
+      if (cell.textContent !== newText) {
+        cell.textContent = newText;
+        cell.className = 'num person-committed ' + (c > 0 ? 'deduct' : 'deduct-zero');
+        flashCell(cell);
+      }
+    });
+
+    document.getElementById('total-committed').textContent = totalCommitted > 0 ? totalCommitted.toFixed(1) : '0';
+
+    // Update backlog section stats
+    document.querySelectorAll('#backlog-container .card').forEach(function(card) {
+      var tbody = card.querySelector('tbody.droppable');
+      if (!tbody) return;
+      var sid = tbody.dataset.sprintId;
+      var rows = tbody.querySelectorAll('tr:not(.loading-row)');
+      var issueCount = rows.length;
+      var spTotal = 0, unestimated = 0;
+      rows.forEach(function(r) {
+        var sp = parseFloat(r.dataset.sp) || 0;
+        if (sp > 0) spTotal += sp;
+        else unestimated++;
+      });
+      var note = card.querySelector('.source-note');
+      if (note) {
+        note.textContent = issueCount + ' issues · ' + spTotal.toFixed(0) + ' SP estimated' +
+          (unestimated > 0 ? ' (' + unestimated + ' unestimated)' : '');
+      }
+    });
+  }
+
+  // ── Refresh tasks from Jira (SP + assignee + new tasks) ──
+  window.refreshTasks = function (silent) {
+    var btns = [document.getElementById('refresh-btn')];
+    btns.forEach(function (b) { if (b) { b.disabled = true; b.textContent = '↻ Loading…'; } });
+    if (!silent) showToast('⏳ Fetching tasks from Jira…', 'info');
+
+    var sprintIds = [];
+    document.querySelectorAll('tbody.droppable[data-sprint-id]').forEach(function (tb) {
+      if (tb.dataset.sprintId) sprintIds.push(tb.dataset.sprintId);
+    });
+    if (sprintIds.length === 0) {
+      btns.forEach(function (b) { if (b) { b.disabled = false; b.textContent = '↻ Refresh Tasks'; } });
+      return;
+    }
+
+    fetch('http://localhost:5000/api/sprint-issues?sprints=' + sprintIds.join(','))
+      .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      .then(function (result) {
+        // Response: { sprints: {id: [issues]}, priorities: [...] }
+        if (Array.isArray(result.priorities) && result.priorities.length) JIRA_PRIORITIES = result.priorities;
+        var data = result.sprints || result;  // fallback for old format
+        document.querySelectorAll('.loading-row').forEach(function (r) { r.remove(); });
+        var updatedSP = 0, updatedAsgn = 0, added = 0;
+
+        Object.keys(data).forEach(function (sprintId) {
+          var tbody = document.querySelector('tbody.droppable[data-sprint-id="' + sprintId + '"]');
+          if (!tbody) return;
+
+          data[sprintId].forEach(function (issue) {
+            // Skip issues with pending local changes to avoid overwriting user edits
+            if (pendingMoves[issue.key] || pendingEdits[issue.key]) return;
+
+            var row = document.querySelector('tr[data-key="' + issue.key + '"]');
+            if (row) {
+              // Update SP
+              var newSP = issue.sp != null ? parseFloat(issue.sp) : 0;
+              var oldSP = parseFloat(row.dataset.sp) || 0;
+              if (newSP !== oldSP) {
+                row.dataset.sp     = newSP;
+                row.dataset.origSp = newSP !== 0 ? String(newSP) : '';
+                var spInput = row.querySelector('.sp-edit');
+                if (spInput) spInput.value = newSP > 0 ? newSP : '';
+                flashCell(row.querySelectorAll('td')[4]);
+                updatedSP++;
+              }
+              // Update Assignee
+              var newAsgn = issue.assignee_display || '';
+              var oldAsgn = row.dataset.assignee   || '';
+              if (newAsgn !== oldAsgn) {
+                row.dataset.assignee     = newAsgn;
+                row.dataset.origAssignee = newAsgn;
+                row.dataset.assigneeKey  = issue.assignee_name || '';
+                var aInput = row.querySelector('.assignee-edit');
+                if (aInput) aInput.value = newAsgn;
+                flashCell(row.querySelectorAll('td')[3]);
+                updatedAsgn++;
+              }
+              // Update Priority
+              var newPri = issue.priority || '';
+              var oldPri = row.dataset.priority || '';
+              if (newPri !== oldPri) {
+                row.dataset.priority     = newPri;
+                row.dataset.origPriority = newPri;
+                row.dataset.priorityId   = issue.priority_id || '';
+                var priPicker = row.querySelector('.pri-picker');
+                if (priPicker) {
+                  var pInfo = JIRA_PRIORITIES.filter(function (x) { return x.name === newPri; })[0];
+                  priPicker.querySelector('.pri-icon') && (priPicker.querySelector('.pri-icon').src = pInfo && pInfo.localIcon || '');
+                  var lbl = priPicker.querySelector('.pri-label');
+                  if (lbl) lbl.textContent = newPri || 'None';
+                  priPicker.querySelectorAll('.pri-menu-item').forEach(function (mi) {
+                    mi.classList.toggle('selected', mi.dataset.name === newPri);
+                  });
+                }
+                var priTd = row.querySelectorAll('td')[5];
+                if (priTd) { priTd.className = PRI_CLASS[newPri] || 'pri-minor'; flashCell(priTd); }
+              }
+            } else {
+              // New issue — add to correct tbody and make editable
+              var newRow = buildIssueRow(issue);
+              tbody.appendChild(newRow);
+              makeIssueRowEditable(newRow);
+              wireDragEvents(newRow);
+              flashCell(newRow.querySelectorAll('td')[0]);
+              added++;
+            }
+          });
+        });
+
+        recalculate();
+        updateCommitVisibility();
+        // Restore any pending changes from localStorage (on initial load)
+        if (silent && !restorePendingState._done) {
+          restorePendingState._done = true;
+          restorePendingState();
+        }
+        var parts = [];
+        if (updatedSP)   parts.push(updatedSP   + ' SP updated');
+        if (updatedAsgn) parts.push(updatedAsgn + ' assignees updated');
+        if (added)       parts.push(added        + ' new tasks');
+        if (!silent) showToast('↻ ' + (parts.length ? parts.join(', ') : 'No changes'), 'success');
+        else if (parts.length) showToast('↻ ' + parts.join(', '), 'success');
+      })
+      .catch(function () {
+        showToast('⚠ Could not reach sprint-server.py — is it running?', 'warn');
+      })
+      .finally(function () {
+        btns.forEach(function (b) { if (b) { b.disabled = false; b.textContent = '↻ Refresh Tasks'; } });
+      });
+  };
+
+  // ── Toast ──
+  function showToast(msg, type) {
+    var el = document.getElementById('toast');
+    el.textContent = msg;
+    el.className = type;
+    el.style.display = 'block';
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { el.style.display = 'none'; }, 4000);
+  }
+
+  // ── Settings modal ──
+  window.openSettings = function() {
+    var overlay = document.getElementById('settings-overlay');
+    overlay.style.display = 'flex';
+    // Populate fields from current config
+    var cfg = teamConfig;
+    document.getElementById('settings-board-url').value = cfg.board_url || '';
+    updateBoardIdDisplay();
+    renderSettingsTeamList(cfg.team || []);
+    renderSettingsBacklogList();
+    // PA toggle
+    var paCb = document.getElementById('settings-pa-enabled');
+    paCb.checked = cfg.pa_enabled !== false;
+    document.getElementById('settings-pa-url').value = cfg.pa_confluence_url || '';
+    document.getElementById('settings-pa-url-row').style.display = paCb.checked ? '' : 'none';
+    // Buffer default
+    document.getElementById('settings-buffer').value = cfg.unscheduled_buffer != null ? cfg.unscheduled_buffer : 5;
+  };
+
+  document.getElementById('settings-pa-enabled').addEventListener('change', function() {
+    document.getElementById('settings-pa-url-row').style.display = this.checked ? '' : 'none';
+  });
+
+  window.closeSettings = function() {
+    document.getElementById('settings-overlay').style.display = 'none';
+  };
+
+  function updateBoardIdDisplay() {
+    var url = document.getElementById('settings-board-url').value;
+    var el = document.getElementById('settings-board-id');
+    var m = url.match(/rapidView=(\d+)/);
+    if (m) {
+      el.textContent = 'Board ID: ' + m[1];
+      el.style.color = '#006644';
+    } else if (url.trim()) {
+      el.textContent = 'Could not extract board ID from URL';
+      el.style.color = '#bf2600';
+    } else {
+      el.textContent = '';
+    }
+  }
+
+  document.addEventListener('DOMContentLoaded', function() {
+    var urlInput = document.getElementById('settings-board-url');
+    if (urlInput) urlInput.addEventListener('input', updateBoardIdDisplay);
+  });
+
+  function renderSettingsTeamList(team) {
+    var el = document.getElementById('settings-team-list');
+    if (!team || team.length === 0) {
+      el.innerHTML = '<span style="color:#5e6c84;">No team members configured</span>';
+      return;
+    }
+    el.innerHTML = team.map(function(name) {
+      return '<div style="padding:2px 0;">' + name + '</div>';
+    }).join('');
+    document.getElementById('settings-team-status').textContent = team.length + ' members';
+  }
+
+  function renderSettingsBacklogList() {
+    var el = document.getElementById('settings-backlog-list');
+    var ids = Object.keys(allBacklogs).sort(function(a, b) {
+      return allBacklogs[a].localeCompare(allBacklogs[b]);
+    });
+    if (ids.length === 0) {
+      el.innerHTML = '<span style="color:#5e6c84;">Available after Jira connects</span>';
+      return;
+    }
+    el.innerHTML = '';
+    ids.forEach(function(id) {
+      var label = document.createElement('label');
+      label.style.cssText = 'display:flex;align-items:center;gap:8px;padding:3px 0;cursor:pointer;font-size:13px;';
+      var cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.checked = !!selectedBacklogs[id];
+      cb.dataset.sprintId = id;
+      cb.addEventListener('change', function() {
+        selectedBacklogs[id] = cb.checked;
+        if (cb.checked) {
+          createBacklogSection(id, allBacklogs[id]);
+          refreshTasks(true);
+        } else {
+          removeBacklogSection(id);
+        }
+        saveBacklogPrefs();
+        // Also update the standalone popover if visible
+        renderBacklogPopover();
+      });
+      label.appendChild(cb);
+      label.appendChild(document.createTextNode(allBacklogs[id]));
+      el.appendChild(label);
+    });
+  }
+
+  window.refreshTeamFromWorkday = function(btn) {
+    btn.disabled = true;
+    btn.textContent = 'Launching...';
+    pollTeamAttempts = 0;
+    document.getElementById('settings-team-status').textContent = 'Opening Workday in Chrome...';
+    fetch('http://localhost:5000/api/fetch-team')
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        if (d.ok) {
+          document.getElementById('settings-team-status').textContent = 'Chrome opened - complete Workday SSO, download team list, then wait...';
+          pollTeamStatus(btn);
+        } else {
+          document.getElementById('settings-team-status').textContent = 'Launch failed: ' + (d.error || 'unknown');
+          btn.disabled = false;
+          btn.textContent = 'Refresh from Workday';
+        }
+      })
+      .catch(function() {
+        document.getElementById('settings-team-status').textContent = 'Server unreachable';
+        btn.disabled = false;
+        btn.textContent = 'Refresh from Workday';
+      });
+  };
+
+  var pollTeamAttempts = 0;
+  var POLL_TEAM_MAX = 45;  // ~3 minutes at 4s intervals
+
+  function pollTeamStatus(btn) {
+    pollTeamAttempts++;
+    if (pollTeamAttempts > POLL_TEAM_MAX) {
+      document.getElementById('settings-team-status').textContent = 'Timed out — Workday script may have failed. Try again.';
+      btn.disabled = false;
+      btn.textContent = 'Refresh from Workday';
+      pollTeamAttempts = 0;
+      return;
+    }
+    fetch('http://localhost:5000/api/team-status', { signal: AbortSignal.timeout(7000) })
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        if (d.configured && d.count > 0) {
+          var hadNoTeam = !teamConfig.team || teamConfig.team.length === 0;
+          teamConfig.team = d.team;
+          renderSettingsTeamList(d.team);
+          document.getElementById('settings-team-status').textContent = 'Updated - ' + d.count + ' members';
+          btn.disabled = false;
+          btn.textContent = 'Refresh from Workday';
+          pollTeamAttempts = 0;
+          // If team was just configured for the first time, trigger absence/PA checks
+          if (hadNoTeam && window.triggerAbsenceAndPAChecks) {
+            window.triggerAbsenceAndPAChecks();
+          }
+        } else {
+          setTimeout(function() { pollTeamStatus(btn); }, 4000);
+        }
+      })
+      .catch(function() { setTimeout(function() { pollTeamStatus(btn); }, 4000); });
+  }
+
+  window.saveSettings = function() {
+    var url = document.getElementById('settings-board-url').value.trim();
+    var m = url.match(/rapidView=(\d+)/);
+    var boardId = m ? parseInt(m[1]) : teamConfig.board_id;
+    var paEnabled = document.getElementById('settings-pa-enabled').checked;
+    var paUrl = document.getElementById('settings-pa-url').value.trim();
+    var bufferDefault = parseFloat(document.getElementById('settings-buffer').value);
+    if (isNaN(bufferDefault) || bufferDefault < 0) bufferDefault = 5;
+
+    var cfg = {
+      board_id: boardId,
+      board_url: url,
+      pa_enabled: paEnabled,
+      pa_confluence_url: paUrl,
+      unscheduled_buffer: bufferDefault,
+    };
+    fetch('http://localhost:5000/api/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(cfg)
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (d.ok) {
+        var paWasOff = teamConfig.pa_enabled === false;
+        teamConfig.board_id = boardId;
+        teamConfig.board_url = url;
+        teamConfig.pa_enabled = paEnabled;
+        teamConfig.pa_confluence_url = paUrl;
+        teamConfig.unscheduled_buffer = bufferDefault;
+        applyPAVisibility();
+        closeSettings();
+        showToast('Settings saved', 'success');
+        // If PA was just re-enabled, refresh PA data
+        if (paEnabled && paWasOff) {
+          showToast('Refreshing PA schedule...', 'info');
+          fetch('http://localhost:5000/api/pa-status', { signal: AbortSignal.timeout(10000) })
+            .then(function(r) { return r.json(); })
+            .then(function(ps) {
+              if (!ps.fresh) {
+                return fetch('http://localhost:5000/api/fetch-pa', { signal: AbortSignal.timeout(15000) });
+              }
+            })
+            .then(function() {
+              return initSprintInfo().then(function() { refreshTasks(true); });
+            })
+            .then(function() { showToast('PA schedule updated', 'success'); })
+            .catch(function() { showToast('Could not refresh PA — try reloading', 'warn'); });
+        }
+      } else {
+        showToast('Save failed: ' + (d.error || 'unknown'), 'error');
+      }
+    })
+    .catch(function() {
+      showToast('Could not save settings - server unreachable', 'error');
+    });
+  };
+
+  // Close modal on overlay click (outside the dialog)
+  document.addEventListener('click', function(e) {
+    var overlay = document.getElementById('settings-overlay');
+    if (e.target === overlay) closeSettings();
+  });
+
+  // ── Startup service check ──
+  (function startupCheck() {
+    var overlay      = document.getElementById('startup-overlay');
+    var svrIcon      = document.getElementById('svc-server-icon');
+    var svrHint      = document.getElementById('svc-server-hint');
+    var jiraIcon     = document.getElementById('svc-jira-icon');
+    var jiraHint     = document.getElementById('svc-jira-hint');
+    var dockerIcon   = document.getElementById('svc-docker-icon');
+    var dockerHint   = document.getElementById('svc-docker-hint');
+    var confIcon     = document.getElementById('svc-confluence-icon');
+    var confHint     = document.getElementById('svc-confluence-hint');
+    var absRow       = document.getElementById('svc-absences');
+    var absIcon      = document.getElementById('svc-absences-icon');
+    var absHint      = document.getElementById('svc-absences-hint');
+    var paRow        = document.getElementById('svc-pa');
+    var paIcon       = document.getElementById('svc-pa-icon');
+    var paHint       = document.getElementById('svc-pa-hint');
+
+    function setRow(icon, hint, state, msg) {
+      icon.textContent = state === 'ok' ? '✓' : state === 'err' ? '✗' : '⏳';
+      icon.style.color = state === 'ok' ? '#006644' : state === 'err' ? '#bf2600' : '#5e6c84';
+      hint.textContent = msg;
+      hint.className = 'svc-hint' + (state === 'err' ? ' err' : '');
+    }
+
+    function initSprintInfo() {
+      return fetch('http://localhost:5000/api/sprint-info')
+        .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+        .then(function(data) {
+          // Store team config for use elsewhere (e.g. assignee dropdowns)
+          if (data.team) teamConfig.team = data.team;
+          if (data.efficiency) teamConfig.efficiency = data.efficiency;
+          if ('pa_enabled' in data) teamConfig.pa_enabled = data.pa_enabled;
+          if ('pa_confluence_url' in data) teamConfig.pa_confluence_url = data.pa_confluence_url;
+          if ('unscheduled_buffer' in data) {
+            teamConfig.unscheduled_buffer = data.unscheduled_buffer;
+            var bi = document.getElementById('buffer-input');
+            if (bi) bi.value = data.unscheduled_buffer;
+          }
+
+          // Build capacity table rows from team config
+          buildCapacityRows(data.team || teamConfig.team, data.efficiency || teamConfig.efficiency);
+
+          // Set sprint state
+          SPRINT_ID = data.sprint_id;
+          SPRINT_NAMES[data.sprint_id] = data.sprint_name;
+          Object.keys(data.backlog_sprints).forEach(function(id) {
+            SPRINT_NAMES[parseInt(id)] = data.backlog_sprints[id];
+          });
+
+          // Update page headers
+          document.title = 'Sprint Capacity \u2014 ' + data.sprint_name;
+          document.getElementById('page-title').textContent = 'Sprint Capacity Plan \u2014 ' + data.sprint_name;
+
+          // Format dates for display
+          var s = new Date(data.start_date + 'T00:00:00');
+          var e = new Date(data.end_date + 'T00:00:00');
+          e.setDate(e.getDate() - 1); // end_date is exclusive, show last working day
+          var months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+          var dateStr = months[s.getMonth()] + ' ' + s.getDate() + ' \u2013 ' + months[e.getMonth()] + ' ' + e.getDate() + ', ' + s.getFullYear();
+          document.getElementById('meta-dates').textContent = '\uD83D\uDCC5 ' + dateStr;
+          document.getElementById('meta-working-days').textContent = '\u23F1 ' + data.working_days + ' working days';
+          var hCount = data.holidays_in_sprint.length;
+          var hText = hCount === 0 ? '0 holidays' : hCount + ' holiday' + (hCount > 1 ? 's' : '') + ': ' + data.holidays_in_sprint.map(function(h) { return h.name; }).join(', ');
+          document.getElementById('meta-holidays').textContent = '\uD83C\uDFD6 ' + hText;
+
+          // Update sprint commitment header + tbody
+          document.getElementById('sprint-commit-title').textContent = 'Sprint Commitment \u2014 ' + data.sprint_name;
+          var commitBody = document.getElementById('sprint-commit-body');
+          if (commitBody) commitBody.dataset.sprintId = data.sprint_id;
+
+          // Set working days, absences, and PA on each person row
+          document.querySelectorAll('[data-person]').forEach(function(row) {
+            row.dataset.workingDays = data.working_days;
+            var absInput = row.querySelector('.deduct-input[data-col="absence"]');
+            if (absInput) {
+              var personAbsence = data.absences[row.dataset.person] || 0;
+              absInput.value = personAbsence;
+              toggleHasValue(absInput);
+            }
+            if (data.pa && teamConfig.pa_enabled !== false) {
+              var paInput = row.querySelector('.deduct-input[data-col="pa"]');
+              if (paInput) {
+                var personPA = data.pa[row.dataset.person] || 0;
+                paInput.value = personPA;
+                toggleHasValue(paInput);
+              }
+            }
+            recomputeCapacity(row);
+          });
+          recomputeTeamCapacity();
+          applyPAVisibility();
+          // Initialize backlog sections from prefs
+          return initBacklogs(data.backlog_sprints);
+        })
+        .catch(function(err) {
+          console.error('initSprintInfo failed:', err);
+          showToast('Sprint detection failed \u2014 using defaults', 'error');
+          // Recompute with defaults so numbers aren't all 0
+          document.querySelectorAll('[data-person]').forEach(function(row) {
+            recomputeCapacity(row);
+          });
+          recomputeTeamCapacity();
+        });
+    }
+
+    var initialLoadDone = false;
+    function dismiss() {
+      overlay.classList.add('hidden');
+      setTimeout(function () { overlay.style.display = 'none'; }, 320);
+      if (!initialLoadDone) {
+        initialLoadDone = true;
+        // Load full config for settings modal (board_url, confluence_account_ids, etc.)
+        fetch('http://localhost:5000/api/config')
+          .then(function(r) { return r.json(); })
+          .then(function(cfg) {
+            Object.keys(cfg).forEach(function(k) { teamConfig[k] = cfg[k]; });
+            // If no team configured, auto-open settings
+            if (!cfg.team || cfg.team.length === 0) {
+              openSettings();
+              showToast('No team configured - set up your team in Settings', 'info');
+            }
+          })
+          .catch(function() {});
+        initSprintInfo().then(function() { refreshTasks(true); });
+      }
+    }
+
+    // Track which services have already passed — don't recheck them
+    var passed = { jira: false, docker: false, confluence: false };
+
+    function poll() {
+      // Only show spinner for services not yet passing
+      if (!passed.jira)       setRow(jiraIcon,   jiraHint,   'checking', 'Checking…');
+      if (!passed.docker)     setRow(dockerIcon, dockerHint, 'checking', 'Checking…');
+      if (!passed.confluence) setRow(confIcon,   confHint,   'checking', 'Checking…');
+
+      // Tell the server to skip checks for services already confirmed OK
+      var skip = Object.keys(passed).filter(function (k) { return passed[k]; });
+      var url  = 'http://localhost:5000/api/health' + (skip.length ? '?skip=' + skip.join(',') : '');
+
+      fetch(url, { signal: AbortSignal.timeout(7000) })
+        .then(function (resp) { return resp.json(); })
+        .then(function (d) {
+          setRow(svrIcon, svrHint, 'ok', 'Running on localhost:5000');
+
+          if (!passed.jira) {
+            if (d.jira) {
+              passed.jira = true;
+              setRow(jiraIcon, jiraHint, 'ok', 'Connected to jira.autodesk.com');
+            } else {
+              setRow(jiraIcon, jiraHint, 'err',
+                'Unreachable' + (d.jira_error ? ': ' + d.jira_error : '') +
+                ' — make sure MCP server is running');
+            }
+          }
+
+          if (!passed.docker) {
+            if (d.docker) {
+              passed.docker = true;
+              setRow(dockerIcon, dockerHint, 'ok', 'Docker Desktop is running');
+            } else {
+              setRow(dockerIcon, dockerHint, 'err',
+                (d.docker_error || 'Not running') + ' — start Docker Desktop');
+            }
+          }
+
+          if (!passed.confluence) {
+            if (d.confluence) {
+              passed.confluence = true;
+              setRow(confIcon, confHint, 'ok', 'Authenticated as ' + d.confluence_user);
+            } else if (d.confluence_needs_auth) {
+              confIcon.textContent = '⚠';
+              confIcon.style.color = '#ff8b00';
+              confHint.innerHTML = (d.confluence_error || 'Not authenticated') +
+                ' &nbsp;<button onclick="reauthConfluence(this)"' +
+                ' style="background:#0052cc;color:#fff;border:none;border-radius:3px;' +
+                'padding:3px 10px;font-size:11px;font-weight:600;cursor:pointer;">Re-authenticate</button>';
+              confHint.className = 'svc-hint';
+            } else {
+              setRow(confIcon, confHint, 'err',
+                (d.confluence_error || 'error') + ' — check network / VPN');
+            }
+          }
+
+          if (passed.jira && passed.docker && passed.confluence) {
+            // Check if team is configured before running absence/PA checks
+            fetch('http://localhost:5000/api/team-status', { signal: AbortSignal.timeout(7000) })
+              .then(function(r) { return r.json(); })
+              .then(function(d) {
+                // Store PA config early so checkPA can use it
+                if ('pa_enabled' in d) teamConfig.pa_enabled = d.pa_enabled;
+                if ('pa_confluence_url' in d) teamConfig.pa_confluence_url = d.pa_confluence_url;
+                if (d.configured) {
+                  checkAbsences();
+                } else {
+                  // No team — skip absence/PA checks, go straight to dismiss
+                  absRow.style.display = '';
+                  setRow(absIcon, absHint, 'ok', 'Skipped — no team configured yet');
+                  paRow.style.display = '';
+                  setRow(paIcon, paHint, 'ok', 'Skipped — no team configured yet');
+                  dismiss();
+                }
+              })
+              .catch(function() {
+                // If team-status check fails, fall back to running absence checks normally
+                checkAbsences();
+              });
+          } else {
+            setTimeout(poll, 5000);
+          }
+        })
+        .catch(function () {
+          setRow(svrIcon, svrHint, 'err', 'Not running — start with: python sprint-server.py');
+          // Reset passed state since server is down
+          passed = { jira: false, docker: false, confluence: false };
+          setRow(jiraIcon,   jiraHint,   'checking', 'Waiting for server…');
+          setRow(dockerIcon, dockerHint, 'checking', 'Waiting for server…');
+          setRow(confIcon,   confHint,   'checking', 'Waiting for server…');
+          setTimeout(poll, 4000);
+        });
+    }
+
+    // Launch auth-confluence.py via the server, then resume polling
+    window.reauthConfluence = function (btn) {
+      btn.disabled = true;
+      btn.textContent = 'Launching…';
+      fetch('http://localhost:5000/oauth/reauth')
+        .then(function () {
+          confIcon.textContent = '⏳';
+          confIcon.style.color = '#5e6c84';
+          confHint.textContent = 'Chrome opened — complete SSO login…';
+          confHint.className = 'svc-hint';
+          // Poll every 4s until the script writes the token and health check passes
+          setTimeout(poll, 4000);
+        })
+        .catch(function () {
+          btn.disabled = false;
+          btn.textContent = 'Re-authenticate';
+        });
+    };
+
+    // ── Absence cache check (runs after all 4 services pass) ──
+    function checkAbsences() {
+      absRow.style.display = '';
+      setRow(absIcon, absHint, 'checking', 'Checking absence cache...');
+      fetch('http://localhost:5000/api/absence-status', { signal: AbortSignal.timeout(10000) })
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+          if (d.fresh) {
+            setRow(absIcon, absHint, 'ok', 'Cached (' + d.age_hours + 'h old)');
+            checkPA();
+          } else {
+            absIcon.textContent = '\u26A0';
+            absIcon.style.color = '#ff8b00';
+            absHint.innerHTML = (d.message || 'Absences not available') +
+              ' &nbsp;<button onclick="refreshAbsences(this)" style="background:#0052cc;color:#fff;' +
+              'border:none;border-radius:3px;padding:3px 10px;font-size:11px;font-weight:600;' +
+              'cursor:pointer;">Refresh from Workday</button>' +
+              ' &nbsp;<button onclick="skipAbsences()" style="background:transparent;color:#5e6c84;' +
+              'border:1px solid #dfe1e6;border-radius:3px;padding:3px 10px;font-size:11px;' +
+              'cursor:pointer;">Skip</button>';
+            absHint.className = 'svc-hint';
+          }
+        })
+        .catch(function() {
+          setRow(absIcon, absHint, 'err', 'Failed to check absence status');
+          setTimeout(checkAbsences, 4000);
+        });
+    }
+
+    // Launch fetch-absences.py via the server, then poll until fresh
+    window.refreshAbsences = function(btn) {
+      btn.disabled = true;
+      btn.textContent = 'Launching...';
+      fetch('http://localhost:5000/api/fetch-absences')
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+          if (d.ok) {
+            absIcon.textContent = '\u23F3';
+            absIcon.style.color = '#5e6c84';
+            absHint.textContent = 'Chrome opened - complete Workday SSO login, then wait...';
+            absHint.className = 'svc-hint';
+            pollAbsences();
+          } else {
+            setRow(absIcon, absHint, 'err', 'Launch failed: ' + (d.error || 'unknown'));
+          }
+        })
+        .catch(function() {
+          btn.disabled = false;
+          btn.textContent = 'Refresh from Workday';
+        });
+    };
+
+    function pollAbsences() {
+      fetch('http://localhost:5000/api/absence-status', { signal: AbortSignal.timeout(7000) })
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+          if (d.fresh) {
+            setRow(absIcon, absHint, 'ok', 'Updated for ' + d.sprint_start + ' ... ' + d.sprint_end);
+            checkPA();
+          } else {
+            setTimeout(pollAbsences, 4000);
+          }
+        })
+        .catch(function() { setTimeout(pollAbsences, 4000); });
+    }
+
+    window.skipAbsences = function() {
+      setRow(absIcon, absHint, 'ok', 'Skipped - using cached/empty data');
+      checkPA();
+    };
+
+    // Silent background polling for absence freshness (returns a Promise)
+    function pollAbsencesSilent() {
+      return new Promise(function(resolve) {
+        function check() {
+          fetch('http://localhost:5000/api/absence-status', { signal: AbortSignal.timeout(7000) })
+            .then(function(r) { return r.json(); })
+            .then(function(d) {
+              if (d.fresh) resolve();
+              else setTimeout(check, 4000);
+            })
+            .catch(function() { setTimeout(check, 4000); });
+        }
+        check();
+      });
+    }
+
+    // Exposed so settings/team-refresh can trigger absence+PA checks after team is configured
+    // Runs in background with toast messages — does NOT re-show the startup overlay
+    window.triggerAbsenceAndPAChecks = function() {
+      showToast('Checking absences & PA schedule...', 'info');
+
+      fetch('http://localhost:5000/api/absence-status', { signal: AbortSignal.timeout(10000) })
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+          if (!d.fresh) {
+            showToast('Fetching absences from Workday...', 'info');
+            return fetch('http://localhost:5000/api/fetch-absences')
+              .then(function() { return pollAbsencesSilent(); });
+          }
+        })
+        .then(function() {
+          if (teamConfig.pa_enabled === false) return;
+          return fetch('http://localhost:5000/api/pa-status', { signal: AbortSignal.timeout(10000) })
+            .then(function(r) { return r.json(); })
+            .then(function(d) {
+              if (!d.fresh) {
+                return fetch('http://localhost:5000/api/fetch-pa', { signal: AbortSignal.timeout(15000) });
+              }
+            });
+        })
+        .then(function() {
+          initSprintInfo().then(function() { refreshTasks(true); });
+          showToast('Absences & PA schedule updated', 'success');
+        })
+        .catch(function() {
+          showToast('Could not fetch absences/PA — check manually', 'warn');
+          initSprintInfo().then(function() { refreshTasks(true); });
+        });
+    };
+
+    // ── PA schedule check (runs after absences) ──
+    function checkPA() {
+      if (teamConfig.pa_enabled === false) {
+        paRow.style.display = '';
+        setRow(paIcon, paHint, 'ok', 'Disabled in settings');
+        dismiss();
+        return;
+      }
+      paRow.style.display = '';
+      setRow(paIcon, paHint, 'checking', 'Checking PA schedule cache...');
+      fetch('http://localhost:5000/api/pa-status', { signal: AbortSignal.timeout(10000) })
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+          if (d.fresh) {
+            setRow(paIcon, paHint, 'ok', 'Cached (' + d.age_hours + 'h old)');
+            dismiss();
+          } else {
+            // PA can be fetched automatically (no browser needed), so try it
+            paHint.innerHTML = (d.message || 'PA schedule not available') +
+              ' &nbsp;<button onclick="refreshPA(this)" style="background:#0052cc;color:#fff;' +
+              'border:none;border-radius:3px;padding:3px 10px;font-size:11px;font-weight:600;' +
+              'cursor:pointer;">Fetch from Confluence</button>' +
+              ' &nbsp;<button onclick="skipPA()" style="background:transparent;color:#5e6c84;' +
+              'border:1px solid #dfe1e6;border-radius:3px;padding:3px 10px;font-size:11px;' +
+              'cursor:pointer;">Skip</button>';
+            paIcon.textContent = '\u26A0';
+            paIcon.style.color = '#ff8b00';
+            paHint.className = 'svc-hint';
+          }
+        })
+        .catch(function() {
+          setRow(paIcon, paHint, 'err', 'Failed to check PA status');
+          setTimeout(checkPA, 4000);
+        });
+    }
+
+    window.refreshPA = function(btn) {
+      btn.disabled = true;
+      btn.textContent = 'Fetching...';
+      setRow(paIcon, paHint, 'checking', 'Fetching PA schedule from Confluence...');
+      fetch('http://localhost:5000/api/fetch-pa', { signal: AbortSignal.timeout(15000) })
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+          if (d.ok) {
+            setRow(paIcon, paHint, 'ok', 'Updated');
+            dismiss();
+          } else {
+            setRow(paIcon, paHint, 'err', 'Fetch failed: ' + (d.error || 'unknown'));
+          }
+        })
+        .catch(function() {
+          setRow(paIcon, paHint, 'err', 'Fetch failed - check Confluence auth');
+        });
+    };
+
+    window.skipPA = function() {
+      setRow(paIcon, paHint, 'ok', 'Skipped - using cached/empty data');
+      dismiss();
+    };
+
+    poll();
+  })();
+})();
+</script>
+</body>
+</html>

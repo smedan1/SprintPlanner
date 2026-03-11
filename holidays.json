@@ -1,0 +1,19 @@
+{
+  "year": 2026,
+  "region": "Canada + Quebec",
+  "source": "Workday Holiday Calendar Report",
+  "holidays": [
+    { "date": "2026-01-01", "name": "New Year's Day" },
+    { "date": "2026-01-02", "name": "Autoday" },
+    { "date": "2026-02-16", "name": "Company Day (Quebec)" },
+    { "date": "2026-04-03", "name": "Good Friday" },
+    { "date": "2026-04-06", "name": "Easter Monday (Quebec)" },
+    { "date": "2026-05-18", "name": "Victoria Day (Quebec)" },
+    { "date": "2026-06-24", "name": "St. Jean Baptiste Day (Quebec)" },
+    { "date": "2026-07-01", "name": "Canada Day" },
+    { "date": "2026-09-07", "name": "Labour Day" },
+    { "date": "2026-10-12", "name": "Thanksgiving Day (Quebec)" },
+    { "date": "2026-12-24", "name": "Autoday" },
+    { "date": "2026-12-25", "name": "Christmas Day" }
+  ]
+}
