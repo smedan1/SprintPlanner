@@ -799,20 +799,24 @@ def check_pa_freshness() -> dict:
 # ── PR (Pull Request Review) Schedule ──────────────────────────────────────
 
 def load_pr_schedule() -> dict:
-    """Read pr-schedule.json if it exists. Returns {person: days} mapping."""
+    """Read pr-schedule.json if it exists. Returns {person: weighted_days} mapping.
+    Applies pr_duty_weight from config (rotations stored as count=1 each)."""
     path = os.path.join(SCRIPT_DIR, 'pr-schedule.json')
+    weight = load_team_config().get('pr_duty_weight', 0.5)
     try:
         with open(path, 'r') as f:
             raw = json.load(f)
         pr = raw.get('pr', {})
-        return {name: (v['days'] if isinstance(v, dict) else v) for name, v in pr.items()}
+        return {name: (v['days'] if isinstance(v, dict) else v) * weight for name, v in pr.items()}
     except Exception:
         return {}
 
 
 def load_pr_schedule_full() -> dict:
-    """Read pr-schedule.json with date details. Returns {person: {days, dates}}."""
+    """Read pr-schedule.json with date details. Returns {person: {days, dates}}.
+    Applies pr_duty_weight from config to the days value."""
     path = os.path.join(SCRIPT_DIR, 'pr-schedule.json')
+    weight = load_team_config().get('pr_duty_weight', 0.5)
     try:
         with open(path, 'r') as f:
             raw = json.load(f)
@@ -820,9 +824,9 @@ def load_pr_schedule_full() -> dict:
         result = {}
         for name, v in pr.items():
             if isinstance(v, dict):
-                result[name] = v
+                result[name] = {'days': v['days'] * weight, 'dates': v.get('dates', [])}
             else:
-                result[name] = {'days': v, 'dates': []}
+                result[name] = {'days': v * weight, 'dates': []}
         return result
     except Exception:
         return {}
@@ -852,9 +856,9 @@ def _get_pr_page_id() -> str:
 
 
 def fetch_pr_from_confluence(sprint_start_str: str, sprint_end_str: str) -> dict:
-    """Fetch PR review schedule from Confluence, parse it, return {person: days} for the sprint.
-    Each PR duty day counts as 0.5 days. sprint_end is exclusive.
-    Only rows where Team column contains 'Gemini' are included."""
+    """Fetch PR review schedule from Confluence, return {person: {days, dates}} for the sprint.
+    Stores rotation count (1 per duty); weight is applied at read time via pr_duty_weight config.
+    sprint_end is exclusive. Only rows where Team column contains 'Gemini' are included."""
     token = get_confluence_session_token()
     if not token:
         raise RuntimeError('No Confluence session token')
@@ -935,7 +939,7 @@ def fetch_pr_from_confluence(sprint_start_str: str, sprint_end_str: str) -> dict
             if name and name in team:
                 if name not in pr_days:
                     pr_days[name] = {'days': 0, 'dates': []}
-                pr_days[name]['days'] += 0.5
+                pr_days[name]['days'] += 1  # count rotations; weight applied at read time
                 pr_days[name]['dates'].append(pr_date.isoformat())
 
     # Auto-save discovered account ID mappings
@@ -1168,6 +1172,7 @@ class Handler(BaseHTTPRequestHandler):
                 'pa_confluence_url': cfg.get('pa_confluence_url', ''),
                 'pr_enabled': cfg.get('pr_enabled', False),
                 'pr_confluence_url': cfg.get('pr_confluence_url', ''),
+                'pr_duty_weight': cfg.get('pr_duty_weight', 0.5),
             })
             return
 
@@ -1309,6 +1314,7 @@ class Handler(BaseHTTPRequestHandler):
                 'pa_confluence_url': cfg.get('pa_confluence_url', ''),
                 'pr_enabled': cfg.get('pr_enabled', False),
                 'pr_confluence_url': cfg.get('pr_confluence_url', ''),
+                'pr_duty_weight': cfg.get('pr_duty_weight', 0.5),
                 'unscheduled_buffer': cfg.get('unscheduled_buffer', 5),
             })
             return
@@ -1355,7 +1361,7 @@ class Handler(BaseHTTPRequestHandler):
                 data = json.loads(body)
                 cfg = load_team_config()
                 # Only update allowed fields
-                for key in ('board_id', 'board_url', 'team', 'efficiency', 'confluence_account_ids', 'pa_enabled', 'pa_confluence_url', 'pr_enabled', 'pr_confluence_url', 'unscheduled_buffer'):
+                for key in ('board_id', 'board_url', 'team', 'efficiency', 'confluence_account_ids', 'pa_enabled', 'pa_confluence_url', 'pr_enabled', 'pr_confluence_url', 'pr_duty_weight', 'unscheduled_buffer'):
                     if key in data:
                         cfg[key] = data[key]
                 save_team_config(cfg)

@@ -103,6 +103,7 @@ All settings are stored in `team-config.json`:
   "pa_confluence_url": "",
   "pr_enabled": false,
   "pr_confluence_url": "",
+  "pr_duty_weight": 0.5,
   "confluence_account_ids": {},
   "unscheduled_buffer": 5
 }
@@ -119,6 +120,7 @@ All settings are stored in `team-config.json`:
 | `pa_confluence_url` | Confluence page URL with PA schedule (required if PA enabled) |
 | `pr_enabled` | Whether PR review column is shown in capacity table |
 | `pr_confluence_url` | Confluence page URL with PR review rotation (required if PR enabled) |
+| `pr_duty_weight` | Deduction per PR rotation: `0.5` (half day, default) or `1` (full day) |
 | `confluence_account_ids` | Mapping of Confluence account IDs to team member names (for PA parsing) |
 | `unscheduled_buffer` | Default unscheduled buffer in SP (default 5); overridable in the UI per session |
 

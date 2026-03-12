@@ -32,7 +32,7 @@ Efficiency is also editable directly in the capacity table UI and auto-saved to 
 - **Hackathon**: company hackathon days
 - **Training**: learning & development time
 - **PA (Promotion Analysis)**: optional; 1-day duty monitoring the staging build for promotion decisions. Enabled/disabled per team in settings.
-- **PR (Pull Request Review)**: optional; cross-team PR review rotation duty. Each duty day = 0.5-day deduction. Schedule read from Confluence. Enabled/disabled per team in settings.
+- **PR (Pull Request Review)**: optional; cross-team PR review rotation duty. Deduction per rotation is configurable: half day (0.5, default) or full day (1.0) via Settings > PR Duty Weight. Schedule read from Confluence. Enabled/disabled per team in settings.
 - **KTLO**: Keep The Lights On — operational/maintenance work
 - **Unscheduled**: team-level buffer for mid-sprint critical priority unplanned work; default **5 SP per sprint**
 
@@ -53,6 +53,7 @@ All team-specific settings are stored in `team-config.json`:
   "pa_confluence_url": "https://your-instance.atlassian.net/wiki/...",
   "pr_enabled": true,
   "pr_confluence_url": "https://autodesk.atlassian.net/wiki/x/fJH5L",
+  "pr_duty_weight": 0.5,
   "confluence_account_ids": {}
 }
 ```
@@ -92,7 +93,7 @@ Settings are managed via the gear icon in the UI header. On first run with no te
 - For each sprint, check the schedule for entries whose date falls within `[start_date, end_date)` — reserve 1 day PA per person matched
 - PA is optional — can be disabled in settings for teams that don't use it
 - PR review schedule page URL is configured in `team-config.json` (`pr_confluence_url`)
-- PR page has a 3-column table (Team, Person, Date). Only "Gemini" rows are included. Each duty day = 0.5-day deduction
+- PR page has a 3-column table (Team, Person, Date). Only "Gemini" rows are included. Deduction per rotation configurable via `pr_duty_weight` (0.5 = half day, 1 = full day)
 - PR is optional — can be disabled in settings for teams that don't use it
 
 ## Jira Boards & Sprints

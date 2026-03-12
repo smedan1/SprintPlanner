@@ -556,6 +556,18 @@
 
       <!-- ═══ RIGHT COLUMN ═══ -->
       <div style="border-left:1px solid #ebecf0;padding-left:32px;">
+
+        <!-- PR Duty Weight -->
+        <div style="margin-bottom:24px;">
+          <div style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:#5e6c84;margin-bottom:10px;">PR Duty Weight</div>
+          <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:#172b4d;cursor:pointer;margin-bottom:6px;">
+            <input type="radio" name="pr-duty-weight" id="settings-pr-weight-half" value="0.5" style="margin:0;"> Half day (4h) per rotation
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:#172b4d;cursor:pointer;">
+            <input type="radio" name="pr-duty-weight" id="settings-pr-weight-full" value="1" style="margin:0;"> Full day (8h) per rotation
+          </label>
+        </div>
+
         <div style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:#5e6c84;margin-bottom:16px;">Confluence Schedules</div>
 
         <!-- PA Schedule -->
@@ -899,7 +911,11 @@
   function applyPRVisibility() {
     var enabled = teamConfig.pr_enabled !== false;
     var link = document.getElementById('pr-col-link');
-    if (link) link.href = teamConfig.pr_confluence_url || '';
+    if (link) {
+      link.href = teamConfig.pr_confluence_url || '';
+      var w = teamConfig.pr_duty_weight || 0.5;
+      link.title = 'Cross-team PR review duty \u2014 ' + w + ' days per rotation \u2014 Click to open in Confluence';
+    }
     document.querySelectorAll('.pr-col').forEach(function(el) {
       el.style.display = enabled ? '' : 'none';
     });
@@ -1925,6 +1941,9 @@
     prCb.checked = cfg.pr_enabled !== false;
     document.getElementById('settings-pr-url').value = cfg.pr_confluence_url || '';
     document.getElementById('settings-pr-url-row').style.display = prCb.checked ? '' : 'none';
+    // PR duty weight
+    var prWeight = cfg.pr_duty_weight || 0.5;
+    document.getElementById(prWeight >= 1 ? 'settings-pr-weight-full' : 'settings-pr-weight-half').checked = true;
     // Buffer default
     document.getElementById('settings-buffer').value = cfg.unscheduled_buffer != null ? cfg.unscheduled_buffer : 5;
   };
@@ -2073,6 +2092,7 @@
     var paUrl = document.getElementById('settings-pa-url').value.trim();
     var prEnabled = document.getElementById('settings-pr-enabled').checked;
     var prUrl = document.getElementById('settings-pr-url').value.trim();
+    var prDutyWeight = document.getElementById('settings-pr-weight-full').checked ? 1 : 0.5;
     var bufferDefault = parseFloat(document.getElementById('settings-buffer').value);
     if (isNaN(bufferDefault) || bufferDefault < 0) bufferDefault = 5;
 
@@ -2083,6 +2103,7 @@
       pa_confluence_url: paUrl,
       pr_enabled: prEnabled,
       pr_confluence_url: prUrl,
+      pr_duty_weight: prDutyWeight,
       unscheduled_buffer: bufferDefault,
     };
     fetch('http://localhost:5000/api/config', {
@@ -2095,12 +2116,15 @@
       if (d.ok) {
         var paWasOff = !teamConfig.pa_enabled;
         var prWasOff = !teamConfig.pr_enabled;
+        var prOldWeight = teamConfig.pr_duty_weight || 0.5;
+        var prWeightChanged = prOldWeight !== prDutyWeight;
         teamConfig.board_id = boardId;
         teamConfig.board_url = url;
         teamConfig.pa_enabled = paEnabled;
         teamConfig.pa_confluence_url = paUrl;
         teamConfig.pr_enabled = prEnabled;
         teamConfig.pr_confluence_url = prUrl;
+        teamConfig.pr_duty_weight = prDutyWeight;
         teamConfig.unscheduled_buffer = bufferDefault;
         applyPAVisibility();
         applyPRVisibility();
@@ -2122,21 +2146,33 @@
             .then(function() { showToast('PA schedule updated', 'success'); })
             .catch(function() { showToast('Could not refresh PA — try reloading', 'warn'); });
         }
-        // If PR was just re-enabled, refresh PR data
+        // If PR was just re-enabled, fetch from Confluence first
         if (prEnabled && prWasOff) {
           showToast('Refreshing PR schedule...', 'info');
           fetch('http://localhost:5000/api/pr-status', { signal: AbortSignal.timeout(10000) })
             .then(function(r) { return r.json(); })
             .then(function(ps) {
-              if (!ps.fresh) {
-                return fetch('http://localhost:5000/api/fetch-pr', { signal: AbortSignal.timeout(15000) });
-              }
+              if (!ps.fresh) return fetch('http://localhost:5000/api/fetch-pr', { signal: AbortSignal.timeout(15000) });
             })
             .then(function() {
               return initSprintInfo().then(function() { refreshTasks(true); });
             })
             .then(function() { showToast('PR schedule updated', 'success'); })
             .catch(function() { showToast('Could not refresh PR — try reloading', 'warn'); });
+        }
+        // Weight changed — scale existing PR inputs directly (no server round-trip)
+        if (prEnabled && prWeightChanged && !prWasOff) {
+          var oldW = prOldWeight;
+          var newW = prDutyWeight;
+          document.querySelectorAll('.deduct-input[data-col="pr"]').forEach(function(inp) {
+            var v = parseFloat(inp.value) || 0;
+            if (v > 0) {
+              inp.value = (v / oldW * newW).toFixed(1).replace(/\.0$/, '');
+              toggleHasValue(inp);
+            }
+          });
+          document.querySelectorAll('[data-person]').forEach(function(row) { recomputeCapacity(row); });
+          recomputeTeamCapacity();
         }
       } else {
         showToast('Save failed: ' + (d.error || 'unknown'), 'error');
@@ -2192,6 +2228,7 @@
           if ('pa_confluence_url' in data) teamConfig.pa_confluence_url = data.pa_confluence_url;
           if ('pr_enabled' in data) teamConfig.pr_enabled = data.pr_enabled;
           if ('pr_confluence_url' in data) teamConfig.pr_confluence_url = data.pr_confluence_url;
+          if ('pr_duty_weight' in data) teamConfig.pr_duty_weight = data.pr_duty_weight;
           if ('unscheduled_buffer' in data) {
             teamConfig.unscheduled_buffer = data.unscheduled_buffer;
             var bi = document.getElementById('buffer-input');
@@ -2369,6 +2406,7 @@
                 if ('pa_confluence_url' in d) teamConfig.pa_confluence_url = d.pa_confluence_url;
                 if ('pr_enabled' in d) teamConfig.pr_enabled = d.pr_enabled;
                 if ('pr_confluence_url' in d) teamConfig.pr_confluence_url = d.pr_confluence_url;
+                if ('pr_duty_weight' in d) teamConfig.pr_duty_weight = d.pr_duty_weight;
                 if (d.configured) {
                   checkAbsences();
                 } else {
