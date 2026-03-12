@@ -430,11 +430,11 @@ _HOLIDAYS_LIST_CACHE: list[dict] | None = None
 
 
 def load_holidays() -> tuple[set[date], list[dict]]:
-    """Read holidays-ca.json, return (set of dates, raw list). Cached after first call."""
+    """Read holidays-ca-qc.json, return (set of dates, raw list). Cached after first call."""
     global _HOLIDAYS_CACHE, _HOLIDAYS_LIST_CACHE
     if _HOLIDAYS_CACHE is not None:
         return _HOLIDAYS_CACHE, _HOLIDAYS_LIST_CACHE
-    path = os.path.join(SCRIPT_DIR, 'holidays-ca.json')
+    path = os.path.join(SCRIPT_DIR, 'holidays-ca-qc.json')
     try:
         with open(path, 'r') as f:
             raw = json.load(f)

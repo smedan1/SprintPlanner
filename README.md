@@ -138,11 +138,11 @@ Team Net Capacity = Sum of person capacities - Unscheduled buffer
 
 ## Holidays
 
-Holiday data is stored in `holidays-ca.json`. To refresh for a new year:
+Holiday data is stored in `holidays-ca-qc.json`. To refresh for a new year:
 
 1. Open Workday and search for "Holiday Calendar Report"
 2. Set the year and export to Excel
-3. Use Claude to parse the Excel file and update `holidays-ca.json`
+3. Use Claude to parse the Excel file and update `holidays-ca-qc.json`
 
 The report should include your country/region's holidays. Currently configured for Canada + Quebec.
 
@@ -178,7 +178,7 @@ fetch-absences.py      # Workday absence scraper
 fetch-team.py          # Workday team list scraper
 auth-confluence.py     # Confluence OAuth helper
 team-config.json       # Team settings (not committed)
-holidays-ca.json          # Holiday calendar
+holidays-ca-qc.json          # Holiday calendar
 .mcp.json              # Jira MCP config with token (gitignored)
 absences.json          # Cached absence data (auto-generated)
 pa-schedule.json       # Cached PA schedule (auto-generated)
