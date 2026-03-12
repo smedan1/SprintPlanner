@@ -111,7 +111,7 @@ Settings are managed via the gear icon in the UI header. On first run with no te
 
 ## Holiday List
 
-Stored in `holidays.json`. Covers Canada + Quebec holidays for **2026**.
+Stored in `holidays-ca.json`. Covers Canada + Quebec holidays for **2026**.
 
 **Last refreshed:** 2026-03-06
 **Needs refresh for 2027:** remind user in ~December 2026
@@ -124,7 +124,7 @@ Stored in `holidays.json`. Covers Canada + Quebec holidays for **2026**.
 4. Click **Export** → **Excel (.xlsx)**
 5. Tell Claude: *"Read the holiday report at: <path-to-file>"*
 6. Claude parses the sheet and extracts **Canada (no region)** + **Quebec** rows
-7. Claude updates `holidays.json`
+7. Claude updates `holidays-ca.json`
 
 **What to extract:** Columns: Country/Region, Date, Holiday Name. Filter rows where Region is blank (Canada federal) or "Quebec".
 
@@ -182,7 +182,7 @@ Stored in `holidays.json`. Covers Canada + Quebec holidays for **2026**.
 | `fetch-team.py` | Workday team list scraper (Playwright) |
 | `auth-confluence.py` | Confluence OAuth session helper |
 | `team-config.json` | Team settings (board, members, efficiency, PA config) |
-| `holidays.json` | Holiday calendar (Canada + Quebec) |
+| `holidays-ca.json` | Holiday calendar (Canada + Quebec) |
 | `absences.json` | Cached absence data for current sprint |
 | `pa-schedule.json` | Cached PA schedule for current sprint |
 | `pr-schedule.json` | Cached PR review schedule for current sprint |
