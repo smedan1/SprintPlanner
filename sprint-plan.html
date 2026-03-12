@@ -18,7 +18,7 @@
 
   /* Layout */
   .container { max-width: 2265px; width: 100%; margin: 0 auto; padding: 24px 32px; display: grid; grid-template-columns: minmax(800px, 900px) 1fr; gap: 24px; flex: 1; overflow: hidden; }
-  .col-left  { display: flex; flex-direction: column; gap: 24px; overflow-y: auto; min-height: 0; }
+  .col-left  { display: flex; flex-direction: column; gap: 24px; overflow-y: auto; min-height: 0; padding-right: 8px; }
   .col-right { display: flex; flex-direction: column; gap: 24px; min-width: 0; overflow-y: auto; min-height: 0; }
 
   /* Summary grid 4×1 in left column */
@@ -254,9 +254,33 @@
   .svc-hint { font-size: 12px; color: #5e6c84; margin-top: 3px; }
   .svc-hint code { background: #f4f5f7; padding: 1px 5px; border-radius: 3px; font-family: monospace; font-size: 11px; }
   .svc-hint.err { color: #bf2600; }
+
+  /* ── Custom confirm dialog ── */
+  #confirm-overlay { display:none; position:fixed; inset:0; background:rgba(9,30,66,.54); z-index:2000; align-items:center; justify-content:center; }
+  #confirm-dialog { background:#fff; border-radius:8px; box-shadow:0 8px 24px rgba(0,0,0,.25); padding:24px 28px; max-width:400px; width:90%; }
+  #confirm-dialog h3 { font-size:16px; font-weight:600; margin-bottom:12px; }
+  #confirm-dialog p { font-size:14px; color:#172b4d; margin-bottom:20px; }
+  #confirm-dialog .confirm-actions { display:flex; justify-content:flex-end; gap:8px; }
+  #confirm-dialog .confirm-actions button { padding:6px 16px; border-radius:4px; border:none; font-size:14px; cursor:pointer; }
+  #confirm-dialog .btn-cancel { background:#f4f5f7; color:#172b4d; }
+  #confirm-dialog .btn-cancel:hover { background:#ebecf0; }
+  #confirm-dialog .btn-confirm { background:#de350b; color:#fff; }
+  #confirm-dialog .btn-confirm:hover { background:#bf2600; }
 </style>
 </head>
 <body>
+
+<!-- ═══ CONFIRM DIALOG ═══ -->
+<div id="confirm-overlay">
+  <div id="confirm-dialog">
+    <h3 id="confirm-title">Discard All</h3>
+    <p id="confirm-msg">Discard all pending changes? This cannot be undone.</p>
+    <div class="confirm-actions">
+      <button class="btn-cancel" onclick="closeConfirm(false)">Cancel</button>
+      <button class="btn-confirm" onclick="closeConfirm(true)">Discard</button>
+    </div>
+  </div>
+</div>
 
 <!-- ═══ STARTUP CHECK OVERLAY ═══ -->
 <div id="startup-overlay">
@@ -1349,9 +1373,26 @@
     renderPendingPanel();
   }
 
+  // ── Custom confirm dialog ──
+  var confirmCallback = null;
+  window.closeConfirm = function(ok) {
+    document.getElementById('confirm-overlay').style.display = 'none';
+    if (ok && confirmCallback) confirmCallback();
+    confirmCallback = null;
+  };
+  function showConfirm(title, msg, btnLabel, cb) {
+    document.getElementById('confirm-title').textContent = title;
+    document.getElementById('confirm-msg').textContent = msg;
+    document.querySelector('#confirm-dialog .btn-confirm').textContent = btnLabel;
+    confirmCallback = cb;
+    document.getElementById('confirm-overlay').style.display = 'flex';
+  }
+
   // ── Discard all pending changes ──
   window.discardAll = function() {
-    if (!confirm('Discard all pending changes? This cannot be undone.')) return;
+    showConfirm('Discard all pending changes?', 'This cannot be undone.', 'Discard', doDiscardAll);
+  };
+  function doDiscardAll() {
     // Revert moves: move rows back to original tbody
     Object.values(pendingMoves).forEach(function(m) {
       var row = document.querySelector('tr[data-key="' + m.issueKey + '"]');
@@ -1397,7 +1438,7 @@
     recalculate();
     renderPendingPanel();
     showToast('All pending changes discarded', 'info');
-  };
+  }
 
   // ── Apply all pending changes to Jira ──
   window.applyToJira = function () {
