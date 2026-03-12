@@ -9,12 +9,13 @@ Example: python fetch-absences.py 2026-03-17 2026-03-31
 Output: absences.json  (per-person absence days within the sprint window)
 """
 
+import re
 import sys
 import json
 import time
 import asyncio
 from pathlib import Path
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from playwright.async_api import async_playwright
 
 WORKDAY_URL = "https://www.myworkday.com/autodesk/d/task/2997$12517.htmld"
@@ -42,6 +43,47 @@ def working_days_in_range(start: date, end: date) -> int:
             count += 1
         d += timedelta(days=1)
     return count
+
+
+def parse_absence_entries(raw_entries: list[dict]) -> list[dict]:
+    """Parse popup table entries into {start, end, hours_per_day} dicts."""
+    results = []
+    for entry in raw_entries:
+        date_text = entry.get('dates', '').strip()
+        duration_text = entry.get('duration', '').strip()
+        if not date_text or not duration_text:
+            continue
+        # Parse hours per day from "8 Hours" or "4 Hours"
+        dur_m = re.search(r'(\d+)', duration_text)
+        if not dur_m:
+            continue
+        hours_per_day = int(dur_m.group(1))
+
+        # Parse date(s)
+        # Range: "Mon, Mar 16, 2026 – Wed, Mar 18, 2026" (en-dash or hyphen)
+        # Single: "Fri, Mar 6, 2026"
+        try:
+            if '\u2013' in date_text or '\u2014' in date_text:
+                # en-dash or em-dash
+                parts = re.split(r'\s*[\u2013\u2014]\s*', date_text, maxsplit=1)
+                start = datetime.strptime(parts[0].strip(), "%a, %b %d, %Y").date()
+                end = datetime.strptime(parts[1].strip(), "%a, %b %d, %Y").date()
+            elif date_text.count(',') >= 3:
+                # Multiple commas suggest a range with regular hyphen: "Mon, Mar 16, 2026 - Wed, Mar 18, 2026"
+                parts = re.split(r'\s*-\s*(?=[A-Z])', date_text, maxsplit=1)
+                if len(parts) == 2:
+                    start = datetime.strptime(parts[0].strip(), "%a, %b %d, %Y").date()
+                    end = datetime.strptime(parts[1].strip(), "%a, %b %d, %Y").date()
+                else:
+                    start = end = datetime.strptime(date_text.strip(), "%a, %b %d, %Y").date()
+            else:
+                # Single day
+                start = end = datetime.strptime(date_text.strip(), "%a, %b %d, %Y").date()
+            results.append({"start": start, "end": end, "hours_per_day": hours_per_day})
+        except ValueError as e:
+            print(f"    Warning: could not parse date '{date_text}': {e}")
+            continue
+    return results
 
 
 async def wait_for_login(page) -> None:
@@ -100,8 +142,6 @@ async def get_current_week_range(page) -> tuple[date | None, date | None]:
     text = await page.evaluate(
         "() => document.querySelector('[data-automation-id=\"dateRangeTitle\"]')?.innerText || ''"
     )
-    import re
-    from datetime import datetime
     # Cross-month format: "Mar 29 – Apr 4, 2026"
     m = re.search(r'(\w+ \d+)\s*[\u2013\u2014-]\s*(\w+ \d+),\s*(\d{4})', text)
     if m:
@@ -126,8 +166,8 @@ async def get_current_week_range(page) -> tuple[date | None, date | None]:
     return None, None
 
 
-async def extract_week_absences(page) -> list[dict]:
-    """Extract per-person absence events from the current calendar week view."""
+async def find_event_blocks(page) -> list[dict]:
+    """Find absence event blocks on the calendar and return their person + click coordinates."""
     await page.wait_for_load_state("networkidle", timeout=30_000)
     await asyncio.sleep(1.2)
 
@@ -135,13 +175,13 @@ async def extract_week_absences(page) -> list[dict]:
         const EMP_ID_RE = /\\(\\d{5,7}\\)/;
         const HOURS_RE = /^\\d+ Hours?$/;
 
-        // --- Find absence event hour elements (innermost text nodes) ---
+        // --- Find absence event hour elements ---
         const hourEls = [...document.querySelectorAll('*')].filter(el =>
             el.children.length <= 2 && HOURS_RE.test((el.innerText || '').trim())
         );
         if (!hourEls.length) return { people: [], events: [] };
 
-        // --- Find the calendar grid body (first ancestor with 2+ employee IDs) ---
+        // --- Find the calendar grid body ---
         let gridBody = null;
         for (let anc = hourEls[0].parentElement; anc; anc = anc.parentElement) {
             const ids = [...new Set((anc.innerText || '').match(/\\(\\d{5,7}\\)/g) || [])];
@@ -149,7 +189,6 @@ async def extract_week_absences(page) -> list[dict]:
         }
 
         // --- Find person name elements with y-positions ---
-        // Use the smallest element containing an employee ID (most specific)
         const allIdEls = [...document.querySelectorAll('a, [data-automation-id], span')].filter(el => {
             const t = (el.innerText || '').trim();
             return EMP_ID_RE.test(t) && t.length < 80 && el.children.length <= 4;
@@ -166,12 +205,13 @@ async def extract_week_absences(page) -> list[dict]:
         }
         const people = Object.values(nameMap).sort((a, b) => a.midY - b.midY);
 
-        // --- Match each event to a person by y-coordinate ---
+        // --- Match each event to a person, return click coordinates ---
         const events = [];
+        const seen = new Set();
         for (const hourEl of hourEls) {
             const hours = (hourEl.innerText || '').trim();
 
-            // Walk up to find the event's SVG container for bounding box
+            // Walk up to find the event container
             let container = hourEl;
             for (let i = 0; i < 10; i++) {
                 if (!container.parentElement || container.parentElement === gridBody) break;
@@ -183,7 +223,7 @@ async def extract_week_absences(page) -> list[dict]:
             if (rect.height === 0) continue;
             const midY = rect.top + rect.height / 2;
 
-            // Find status by walking up from hourEl
+            // Find status
             let status = '';
             for (let check = hourEl; check && !status; check = check.parentElement) {
                 const t = (check.innerText || '');
@@ -200,24 +240,139 @@ async def extract_week_absences(page) -> list[dict]:
                 if (dist < bestDist) { bestDist = dist; best = p; }
             }
 
-            events.push({ person: best ? best.name : 'Unknown', hours, status });
+            // Deduplicate
+            const key = `${best ? best.name : 'Unknown'}|${hours}`;
+            if (seen.has(key)) continue;
+            seen.add(key);
+
+            events.push({
+                person: best ? best.name : 'Unknown',
+                hours,
+                status,
+                x: rect.left + rect.width / 2,
+                y: rect.top + rect.height / 2,
+            });
         }
 
-        // Deduplicate
-        const seen = new Set();
-        const deduped = events.filter(e => {
-            const key = `${e.person}|${e.hours}`;
-            if (seen.has(key)) return false;
-            seen.add(key);
-            return true;
-        });
-
-        return { people: people.map(p => p.name), events: deduped };
+        return { people: people.map(p => p.name), events };
     }""")
 
     print(f"  People: {data['people']}")
-    print(f"  Events: {data['events']}")
+    print(f"  Events: {len(data['events'])} blocks found")
+    for ev in data['events']:
+        print(f"    {ev['person']}: {ev['hours']} ({ev['status']})")
     return data['events']
+
+
+async def scrape_popup_entries(page) -> list[dict]:
+    """Scrape the absence entries table from an open popup."""
+    await asyncio.sleep(0.8)
+    entries = await page.evaluate("""() => {
+        const DATE_RE = /\\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\\b.*\\d{4}/;
+        const HOURS_RE = /^\\d+\\s+Hours?$/;
+        const entries = [];
+
+        // Strategy 1: look in table rows
+        const tables = document.querySelectorAll('table');
+        for (const table of tables) {
+            const rows = table.querySelectorAll('tr');
+            for (const row of rows) {
+                const cells = row.querySelectorAll('td');
+                if (cells.length < 2) continue;
+                let dateCell = null, durationCell = null;
+                for (const cell of cells) {
+                    const t = (cell.innerText || '').trim();
+                    if (DATE_RE.test(t)) dateCell = t;
+                    if (HOURS_RE.test(t)) durationCell = t;
+                }
+                if (dateCell && durationCell) {
+                    entries.push({ dates: dateCell, duration: durationCell });
+                }
+            }
+        }
+        if (entries.length > 0) return entries;
+
+        // Strategy 2: look in any popup/dialog container for text nodes matching date + hours
+        const popups = document.querySelectorAll('[data-automation-id="wd-popup"], .wd-popup, [role="dialog"], [data-automation-id="absenceEntriesPopup"]');
+        for (const popup of popups) {
+            const allEls = popup.querySelectorAll('*');
+            let lastDate = null;
+            for (const el of allEls) {
+                if (el.children.length > 2) continue;
+                const t = (el.innerText || '').trim();
+                if (DATE_RE.test(t) && t.length < 100) {
+                    lastDate = t;
+                } else if (HOURS_RE.test(t) && lastDate) {
+                    entries.push({ dates: lastDate, duration: t });
+                    lastDate = null;
+                }
+            }
+        }
+        if (entries.length > 0) return entries;
+
+        // Strategy 3: brute-force scan the whole page for newly appeared elements
+        // Look for all visible elements with date + hours near each other
+        const allEls = document.querySelectorAll('*');
+        const dateEls = [];
+        const hoursEls = [];
+        for (const el of allEls) {
+            if (el.children.length > 2) continue;
+            const t = (el.innerText || '').trim();
+            const r = el.getBoundingClientRect();
+            if (r.height === 0) continue;
+            if (DATE_RE.test(t) && t.length < 100) dateEls.push({ text: t, y: r.top });
+            if (HOURS_RE.test(t)) hoursEls.push({ text: t, y: r.top });
+        }
+        // Match date/hours elements by proximity (within 30px vertically)
+        for (const dEl of dateEls) {
+            let best = null, bestDist = 30;
+            for (const hEl of hoursEls) {
+                const dist = Math.abs(dEl.y - hEl.y);
+                if (dist < bestDist) { bestDist = dist; best = hEl; }
+            }
+            if (best) entries.push({ dates: dEl.text, duration: best.text });
+        }
+        return entries;
+    }""")
+    return entries
+
+
+async def click_event_and_get_entries(page, ev: dict) -> list[dict]:
+    """Click an absence event block, scrape popup entries, close popup."""
+    try:
+        # Count existing table cells before clicking so we can detect the popup
+        pre_count = await page.evaluate("() => document.querySelectorAll('table td').length")
+        await page.mouse.click(ev['x'], ev['y'])
+
+        # Wait for popup: either new table cells appear, or a popup/dialog element shows up
+        try:
+            await page.wait_for_function(
+                f"() => document.querySelectorAll('table td').length > {pre_count} "
+                f"|| document.querySelector('[data-automation-id=\"wd-popup\"]') "
+                f"|| document.querySelector('.wd-popup') "
+                f"|| document.querySelector('[role=\"dialog\"]')",
+                timeout=5000,
+            )
+        except Exception:
+            # Popup may have opened differently, try a short wait
+            await asyncio.sleep(2)
+
+        entries = await scrape_popup_entries(page)
+
+        # Close popup with Escape
+        await page.keyboard.press("Escape")
+        await asyncio.sleep(0.5)
+
+        return entries
+    except Exception as e:
+        print(f"    Warning: failed to scrape popup for {ev['person']}: {e}")
+        # Try to close any open popup
+        try:
+            await page.keyboard.press("Escape")
+            await asyncio.sleep(0.3)
+        except Exception:
+            pass
+        return []
 
 
 async def main():
@@ -243,7 +398,10 @@ async def main():
 
             # Navigate week by week until we've covered the full sprint window
             from collections import defaultdict
-            hours_by_person: dict[str, int] = defaultdict(int)
+            hours_by_person: dict[str, float] = defaultdict(float)
+            dates_by_person: dict[str, set] = defaultdict(set)
+            # Track seen entries globally to avoid double-counting across weeks
+            seen_entries: set[tuple] = set()  # (person, start_iso, end_iso)
             covered_up_to = date.min
 
             for week_num in range(1, 6):  # max 5 weeks
@@ -267,22 +425,31 @@ async def main():
                 if week_start >= s_end:
                     break
 
-                events = await extract_week_absences(page)
-                for ev in events:
-                    if ev.get("status") in ("Approved", ""):
-                        h = int(ev["hours"].replace(" Hours", "").replace(" Hour", ""))
-                        # Intersect event hours with sprint window in this week
-                        # All ranges use exclusive end: [start, end)
-                        overlap_start = max(week_start, s_start)
-                        overlap_end   = min(week_end_excl, s_end)
-                        overlap_days  = working_days_in_range(overlap_start, overlap_end)
-                        week_work_days = working_days_in_range(week_start, week_end_excl)
-                        if week_work_days > 0:
-                            # Pro-rate: assume absence is evenly distributed across the week
-                            sprint_h = round(h * overlap_days / week_work_days)
-                            hours_by_person[ev["person"]] += sprint_h
-                        else:
-                            hours_by_person[ev["person"]] += h
+                event_blocks = await find_event_blocks(page)
+
+                for ev in event_blocks:
+                    if ev.get("status") not in ("Approved", ""):
+                        continue
+
+                    print(f"  > Clicking {ev['person']} ({ev['hours']})...")
+                    raw_entries = await click_event_and_get_entries(page, ev)
+                    print(f"    Popup entries: {raw_entries}")
+
+                    parsed = parse_absence_entries(raw_entries)
+                    for entry in parsed:
+                        # Dedup: skip if we've already processed this exact entry
+                        entry_key = (ev['person'], entry['start'].isoformat(), entry['end'].isoformat())
+                        if entry_key in seen_entries:
+                            continue
+                        seen_entries.add(entry_key)
+
+                        # Enumerate each working day in the entry's range
+                        d = entry['start']
+                        while d <= entry['end']:
+                            if d.weekday() < 5 and d >= s_start and d < s_end:
+                                hours_by_person[ev['person']] += entry['hours_per_day']
+                                dates_by_person[ev['person']].add(d.isoformat())
+                            d += timedelta(days=1)
 
                 covered_up_to = week_end_excl
                 if covered_up_to >= s_end:
@@ -295,8 +462,9 @@ async def main():
             absences = {}
             for person, hours in sorted(hours_by_person.items()):
                 days = hours / 8
-                absences[person] = {"hours": hours, "days": days}
-                print(f"  {person}: {hours}h = {days:.1f} days")
+                person_dates = sorted(dates_by_person.get(person, []))
+                absences[person] = {"hours": hours, "days": days, "dates": person_dates}
+                print(f"  {person}: {hours}h = {days:.1f} days ({len(person_dates)} dates)")
 
             output = {
                 "sprint_start": sprint_start,

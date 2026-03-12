@@ -49,7 +49,23 @@
   td.full { color: #006644; }
 
   /* Person column */
-  .person { font-weight: 500; white-space: nowrap; }
+  .person { font-weight: 500; white-space: nowrap; cursor: pointer; }
+  .person:hover { color: #0052cc; text-decoration: underline; }
+
+  /* Detail row */
+  tr.detail-row > td { padding: 12px 16px; background: #f8f9fb; border-top: none; }
+  .detail-content { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; font-size: 13px; }
+  .detail-content h4 { margin: 0 0 6px; font-size: 12px; text-transform: uppercase; color: #6b778c; letter-spacing: 0.5px; }
+  .detail-dates { line-height: 1.8; }
+  .detail-dates .dlabel { color: #6b778c; display: inline-block; min-width: 50px; }
+  .detail-dates .none { color: #97a0af; font-style: italic; }
+  .detail-tasks { grid-column: 1 / -1; margin-top: 4px; }
+  .detail-tasks table { width: 100%; font-size: 12px; border-collapse: collapse; }
+  .detail-tasks th { text-align: left; font-weight: 600; font-size: 11px; text-transform: uppercase; color: #6b778c; padding: 2px 8px 4px 0; }
+  .detail-tasks th:last-child { text-align: right; }
+  .detail-tasks td { padding: 3px 8px 3px 0; }
+  .detail-tasks td:last-child { text-align: right; font-variant-numeric: tabular-nums; }
+  .detail-tasks a { color: #0052cc; text-decoration: none; }
 
   /* Deduction style */
   .deduct { color: #bf2600; }
@@ -328,6 +344,13 @@
         <div class="svc-hint" id="svc-pa-hint">Checking cache…</div>
       </div>
     </div>
+    <div class="svc-row" id="svc-pr" style="display:none;">
+      <div class="svc-icon" id="svc-pr-icon">⏳</div>
+      <div class="svc-body">
+        <div class="svc-name">PR Review Schedule <span style="font-weight:400;color:#5e6c84;">(Confluence)</span></div>
+        <div class="svc-hint" id="svc-pr-hint">Checking cache…</div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -341,7 +364,7 @@
       <span id="meta-holidays">🏖 — holidays</span>
     </div>
   </div>
-  <button id="settings-btn" title="Settings" style="background:none;border:none;color:rgba(255,255,255,0.85);font-size:20px;cursor:pointer;padding:4px 8px;margin-top:2px;" onclick="openSettings()">&#9881;</button>
+  <button id="settings-btn" title="Settings" style="background:none;border:none;color:rgba(255,255,255,0.9);font-size:28px;cursor:pointer;padding:6px 10px;border-radius:6px;transition:background .2s;" onmouseenter="this.style.background='rgba(255,255,255,0.15)'" onmouseleave="this.style.background='none'" onclick="openSettings()">&#9881;</button>
 </div>
 
 <div class="container">
@@ -356,17 +379,18 @@
     <table>
       <thead>
         <tr>
-          <th>Person</th>
-          <th class="num">Absence</th>
-          <th class="num pa-col" id="pa-col-header"><a id="pa-col-link" href="" target="_blank" title="Open PA schedule in Confluence" style="color:inherit;text-decoration:none;border-bottom:1px dashed rgba(0,0,0,0.3);">PA</a></th>
-          <th class="num">KTLO</th>
-          <th class="num">Events</th>
-          <th class="num">Hack.</th>
-          <th class="num">Training</th>
-          <th class="num">Avail</th>
-          <th class="num">Eff%</th>
-          <th class="num">Cap (SP)</th>
-          <th class="num">Committed</th>
+          <th title="Team member name">Person</th>
+          <th class="num" title="Vacation, sick days, and other time off">Absence</th>
+          <th class="num pa-col" id="pa-col-header"><a id="pa-col-link" href="" target="_blank" title="Promotion Analysis duty — 1 day per rotation — Click to open in Confluence" style="color:inherit;text-decoration:none;border-bottom:1px dashed rgba(0,0,0,0.3);">PA</a></th>
+          <th class="num pr-col" id="pr-col-header"><a id="pr-col-link" href="" target="_blank" title="Cross-team PR review duty — 0.5 days per rotation — Click to open in Confluence" style="color:inherit;text-decoration:none;border-bottom:1px dashed rgba(0,0,0,0.3);">PR</a></th>
+          <th class="num" title="Keep The Lights On — operational/maintenance work">KTLO</th>
+          <th class="num" title="Team events that take time away from sprint work">Events</th>
+          <th class="num" title="Company hackathon days">Hack.</th>
+          <th class="num" title="Learning & development time">Training</th>
+          <th class="num" title="Working days minus all deductions">Avail</th>
+          <th class="num" title="Percentage of available time spent on sprint work">Eff%</th>
+          <th class="num" title="Calculated capacity in story points">Cap (SP)</th>
+          <th class="num" title="Story points assigned to this person in the sprint">Committed</th>
         </tr>
       </thead>
       <tbody id="capacity-body">
@@ -375,6 +399,7 @@
           <td>Team Total</td>
           <td class="num" id="total-absence">0</td>
           <td class="num pa-col" id="total-pa">0</td>
+          <td class="num pr-col" id="total-pr">0</td>
           <td class="num" id="total-ktlo">0</td>
           <td class="num" id="total-events">0</td>
           <td class="num" id="total-hack">0</td>
@@ -485,54 +510,75 @@
 
 <!-- ═══ SETTINGS MODAL ═══ -->
 <div id="settings-overlay" style="display:none;position:fixed;inset:0;background:rgba(9,30,66,.54);z-index:1000;display:none;align-items:center;justify-content:center;">
-  <div style="background:#fff;border-radius:8px;box-shadow:0 8px 24px rgba(9,30,66,.25);width:540px;max-height:80vh;overflow-y:auto;padding:28px 32px;">
+  <div style="background:#fff;border-radius:8px;box-shadow:0 8px 24px rgba(9,30,66,.25);width:820px;max-height:80vh;overflow-y:auto;padding:28px 32px;">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">
       <h2 style="font-size:18px;font-weight:600;color:#172b4d;margin:0;">Settings</h2>
       <button onclick="closeSettings()" style="background:none;border:none;font-size:20px;cursor:pointer;color:#5e6c84;padding:0 4px;">&times;</button>
     </div>
 
-    <!-- Board URL -->
-    <div style="margin-bottom:20px;">
-      <label style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:#5e6c84;display:block;margin-bottom:6px;">Jira Board</label>
-      <input id="settings-board-url" type="text" placeholder="https://jira.autodesk.com/secure/RapidBoard.jspa?rapidView=12345" style="width:100%;padding:8px 10px;border:1px solid #dfe1e6;border-radius:3px;font-size:13px;box-sizing:border-box;">
-      <div id="settings-board-id" style="margin-top:4px;font-size:12px;color:#5e6c84;"></div>
-    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 32px;">
+      <!-- ═══ LEFT COLUMN ═══ -->
+      <div>
+        <!-- Board URL -->
+        <div style="margin-bottom:20px;">
+          <label style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:#5e6c84;display:block;margin-bottom:6px;">Jira Board</label>
+          <input id="settings-board-url" type="text" placeholder="https://jira.autodesk.com/secure/RapidBoard.jspa?rapidView=12345" style="width:100%;padding:8px 10px;border:1px solid #dfe1e6;border-radius:3px;font-size:13px;box-sizing:border-box;">
+          <div id="settings-board-id" style="margin-top:4px;font-size:12px;color:#5e6c84;"></div>
+        </div>
 
-    <!-- Team Members -->
-    <div style="margin-bottom:20px;">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
-        <label style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:#5e6c84;">Team Members</label>
-        <button id="settings-refresh-team" onclick="refreshTeamFromWorkday(this)" style="background:#0052cc;color:#fff;border:none;border-radius:3px;padding:4px 12px;font-size:11px;font-weight:600;cursor:pointer;">Refresh from Workday</button>
+        <!-- Team Members -->
+        <div style="margin-bottom:20px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+            <label style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:#5e6c84;">Team Members</label>
+            <button id="settings-refresh-team" onclick="refreshTeamFromWorkday(this)" style="background:#0052cc;color:#fff;border:none;border-radius:3px;padding:4px 12px;font-size:11px;font-weight:600;cursor:pointer;">Refresh from Workday</button>
+          </div>
+          <div id="settings-team-list" style="border:1px solid #dfe1e6;border-radius:3px;padding:8px 12px;min-height:40px;font-size:13px;color:#172b4d;background:#fafbfc;max-height:180px;overflow-y:auto;">
+            <span style="color:#5e6c84;">Loading...</span>
+          </div>
+          <div id="settings-team-status" style="margin-top:4px;font-size:12px;color:#5e6c84;"></div>
+        </div>
+
+        <!-- Unscheduled Buffer -->
+        <div style="margin-bottom:20px;">
+          <label for="settings-buffer" style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:#5e6c84;display:block;margin-bottom:6px;">Default Unscheduled Buffer (SP)</label>
+          <input id="settings-buffer" type="number" min="0" step="0.5" value="5" style="width:80px;padding:8px 10px;border:1px solid #dfe1e6;border-radius:3px;font-size:13px;box-sizing:border-box;">
+          <div style="margin-top:4px;font-size:12px;color:#5e6c84;">Team-level reserve for unplanned work. Can be overridden per-session in the capacity summary.</div>
+        </div>
+
+        <!-- Backlog Sprints -->
+        <div style="margin-bottom:24px;">
+          <label style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:#5e6c84;display:block;margin-bottom:6px;">Backlog Sprints</label>
+          <div id="settings-backlog-list" style="border:1px solid #dfe1e6;border-radius:3px;padding:8px 12px;min-height:40px;font-size:13px;background:#fafbfc;max-height:180px;overflow-y:auto;">
+            <span style="color:#5e6c84;">Available after Jira connects</span>
+          </div>
+        </div>
       </div>
-      <div id="settings-team-list" style="border:1px solid #dfe1e6;border-radius:3px;padding:8px 12px;min-height:40px;font-size:13px;color:#172b4d;background:#fafbfc;max-height:180px;overflow-y:auto;">
-        <span style="color:#5e6c84;">Loading...</span>
-      </div>
-      <div id="settings-team-status" style="margin-top:4px;font-size:12px;color:#5e6c84;"></div>
-    </div>
 
-    <!-- PA Schedule -->
-    <div style="margin-bottom:20px;">
-      <label style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:#5e6c84;display:flex;align-items:center;gap:8px;margin-bottom:6px;">
-        <input id="settings-pa-enabled" type="checkbox" style="margin:0;"> PA Schedule (Promotion Analysis)
-      </label>
-      <div id="settings-pa-url-row" style="display:none;">
-        <input id="settings-pa-url" type="text" placeholder="https://autodesk.atlassian.net/wiki/spaces/.../pages/..." style="width:100%;padding:8px 10px;border:1px solid #dfe1e6;border-radius:3px;font-size:13px;box-sizing:border-box;">
-        <div style="margin-top:4px;font-size:12px;color:#5e6c84;">Confluence page URL with the PA schedule table</div>
-      </div>
-    </div>
+      <!-- ═══ RIGHT COLUMN ═══ -->
+      <div style="border-left:1px solid #ebecf0;padding-left:32px;">
+        <div style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:#5e6c84;margin-bottom:16px;">Confluence Schedules</div>
 
-    <!-- Unscheduled Buffer -->
-    <div style="margin-bottom:20px;">
-      <label for="settings-buffer" style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:#5e6c84;display:block;margin-bottom:6px;">Default Unscheduled Buffer (SP)</label>
-      <input id="settings-buffer" type="number" min="0" step="0.5" value="5" style="width:80px;padding:8px 10px;border:1px solid #dfe1e6;border-radius:3px;font-size:13px;box-sizing:border-box;">
-      <div style="margin-top:4px;font-size:12px;color:#5e6c84;">Team-level reserve for unplanned work. Can be overridden per-session in the capacity summary.</div>
-    </div>
+        <!-- PA Schedule -->
+        <div style="margin-bottom:20px;">
+          <label style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:#5e6c84;display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+            <input id="settings-pa-enabled" type="checkbox" style="margin:0;"> PA Schedule (Promotion Analysis)
+          </label>
+          <div id="settings-pa-url-row" style="display:none;">
+            <input id="settings-pa-url" type="text" placeholder="https://autodesk.atlassian.net/wiki/spaces/.../pages/..." style="width:100%;padding:8px 10px;border:1px solid #dfe1e6;border-radius:3px;font-size:13px;box-sizing:border-box;">
+            <div style="margin-top:4px;font-size:12px;color:#5e6c84;">Confluence page URL with the PA schedule table</div>
+          </div>
+        </div>
 
-    <!-- Backlog Sprints -->
-    <div style="margin-bottom:24px;">
-      <label style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:#5e6c84;display:block;margin-bottom:6px;">Backlog Sprints</label>
-      <div id="settings-backlog-list" style="border:1px solid #dfe1e6;border-radius:3px;padding:8px 12px;min-height:40px;font-size:13px;background:#fafbfc;max-height:180px;overflow-y:auto;">
-        <span style="color:#5e6c84;">Available after Jira connects</span>
+        <!-- PR Review Schedule -->
+        <div style="margin-bottom:20px;">
+          <label style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:#5e6c84;display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+            <input id="settings-pr-enabled" type="checkbox" style="margin:0;"> PR Review Schedule (Pull Request Review)
+          </label>
+          <div id="settings-pr-url-row" style="display:none;">
+            <input id="settings-pr-url" type="text" placeholder="https://autodesk.atlassian.net/wiki/spaces/.../pages/..." style="width:100%;padding:8px 10px;border:1px solid #dfe1e6;border-radius:3px;font-size:13px;box-sizing:border-box;">
+            <div style="margin-top:4px;font-size:12px;color:#5e6c84;">Confluence page URL with the PR review rotation table</div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -621,7 +667,7 @@
 
   function recomputeTeamCapacity() {
     var total = 0;
-    var totals = { absence:0, pa:0, ktlo:0, events:0, hack:0, training:0 };
+    var totals = { absence:0, pa:0, pr:0, ktlo:0, events:0, hack:0, training:0 };
     var totalAvail = 0;
     document.querySelectorAll('[data-person]').forEach(function (row) {
       total += parseFloat(row.querySelector('.person-capacity').textContent) || 0;
@@ -634,7 +680,7 @@
     document.getElementById('total-capacity').textContent = total.toFixed(1);
     document.getElementById('stat-gross').textContent = total.toFixed(1);
     // Update total row deduction cells
-    ['absence','pa','ktlo','events','hack','training'].forEach(function(col) {
+    ['absence','pa','pr','ktlo','events','hack','training'].forEach(function(col) {
       var el = document.getElementById('total-' + col);
       if (el) el.textContent = totals[col] > 0 ? totals[col].toFixed(1) : '0';
     });
@@ -657,6 +703,7 @@
   function wireCapacityInputs(row) {
     row.querySelectorAll('.eff-input').forEach(function (input) {
       input.addEventListener('input', function () {
+        var dr = document.querySelector('tr.detail-row'); if (dr) dr.remove();
         recomputeCapacity(this.closest('tr'));
         recomputeTeamCapacity();
       });
@@ -673,6 +720,7 @@
     });
     row.querySelectorAll('.deduct-input').forEach(function (input) {
       input.addEventListener('input', function () {
+        var dr = document.querySelector('tr.detail-row'); if (dr) dr.remove();
         var v = parseFloat(this.value);
         if (v < 0) { this.value = 0; }
         toggleHasValue(this);
@@ -685,7 +733,147 @@
     });
   }
 
-  var DEDUCT_COLS = ['absence', 'pa', 'ktlo', 'events', 'hack', 'training'];
+  // ── Person detail expand row ──
+  window._sprintDetail = { absences: {}, pa: {}, pr: {} };
+
+  function fmtDetailDate(isoStr) {
+    var d = new Date(isoStr + 'T00:00:00');
+    var months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    return months[d.getMonth()] + ' ' + d.getDate();
+  }
+
+  function fmtAbsenceDates(dates, totalDays) {
+    if (!dates || !dates.length) return '';
+    // Sort dates and group consecutive calendar days into ranges
+    var sorted = dates.slice().sort();
+    var ranges = [];
+    var curStart = sorted[0], curEnd = sorted[0];
+    for (var i = 1; i < sorted.length; i++) {
+      var prev = new Date(curEnd + 'T00:00:00');
+      var cur = new Date(sorted[i] + 'T00:00:00');
+      var gap = (cur - prev) / 86400000;
+      // Consecutive if gap <= 3 days (covers weekends)
+      if (gap <= 3) {
+        curEnd = sorted[i];
+      } else {
+        ranges.push({ start: curStart, end: curEnd });
+        curStart = sorted[i];
+        curEnd = sorted[i];
+      }
+    }
+    ranges.push({ start: curStart, end: curEnd });
+    // Format ranges
+    var parts = ranges.map(function(r) {
+      if (r.start === r.end) return fmtDetailDate(r.start);
+      return fmtDetailDate(r.start) + '\u2013' + fmtDetailDate(r.end);
+    });
+    var dLabel = totalDays === 1 ? '1 day' : totalDays.toFixed(1).replace(/\.0$/, '') + ' days';
+    return parts.join(', ') + ' (' + dLabel + ')';
+  }
+
+  function fmtScheduleDates(dates, totalDays) {
+    if (!dates || !dates.length) return '<span class="none">None</span>';
+    var sorted = dates.slice().sort();
+    var dStr = sorted.map(fmtDetailDate).join(', ');
+    var label = totalDays === 1 ? '1 day' : totalDays.toFixed(1).replace(/\.0$/, '') + ' days';
+    return dStr + ' (' + label + ')';
+  }
+
+  window.togglePersonDetail = function(cell) {
+    var personRow = cell.parentElement;
+    var next = personRow.nextElementSibling;
+    // Remove any existing detail row
+    var prev = document.querySelector('tr.detail-row');
+    if (prev) prev.remove();
+    // Toggle off if same person was expanded
+    if (next && next.classList.contains('detail-row')) return;
+    // Build and insert
+    var colCount = personRow.children.length;
+    var detailTr = document.createElement('tr');
+    detailTr.className = 'detail-row';
+    var td = document.createElement('td');
+    td.colSpan = colCount;
+    td.innerHTML = buildPersonDetail(personRow);
+    detailTr.appendChild(td);
+    personRow.after(detailTr);
+  };
+
+  function buildPersonDetail(row) {
+    var name = row.dataset.person;
+    var detail = window._sprintDetail;
+    var absInfo = detail.absences[name] || { days: 0, weeks: [] };
+    var paInfo = detail.pa[name] || { days: 0, dates: [] };
+    var prInfo = detail.pr[name] || { days: 0, dates: [] };
+
+    // Committed tasks from sprint commitment body
+    var tasks = [];
+    var totalSP = 0;
+    document.querySelectorAll('#sprint-commit-body tr').forEach(function(tr) {
+      if (tr.dataset.assignee === name) {
+        var sp = parseFloat(tr.dataset.sp) || 0;
+        tasks.push({ key: tr.dataset.key, summary: tr.querySelectorAll('td')[1].textContent, sp: sp });
+        totalSP += sp;
+      }
+    });
+
+    var html = '<div class="detail-content">';
+
+    // Left column: Absences
+    html += '<div class="detail-dates"><h4>Absences</h4>';
+    if (absInfo.days > 0) {
+      var dHtml = fmtAbsenceDates(absInfo.dates, absInfo.days);
+      if (dHtml) {
+        html += dHtml;
+      } else {
+        var dLabel = absInfo.days === 1 ? '1 day' : absInfo.days.toFixed(1).replace(/\\.0$/, '') + ' days';
+        html += dLabel + ' total';
+      }
+    } else {
+      html += '<span class="none">None</span>';
+    }
+    html += '</div>';
+
+    // Right column: Schedule (PA + PR)
+    html += '<div class="detail-dates"><h4>Schedule</h4>';
+    var hasSchedule = false;
+    // PA line (only if enabled)
+    var paVisible = !document.querySelector('.pa-col') || document.querySelector('.pa-col').style.display !== 'none';
+    if (paVisible && (paInfo.days > 0 || paInfo.dates.length > 0)) {
+      html += '<span class="dlabel">PA:</span> ' + fmtScheduleDates(paInfo.dates, paInfo.days) + '<br>';
+      hasSchedule = true;
+    }
+    // PR line (only if enabled)
+    var prVisible = !document.querySelector('.pr-col') || document.querySelector('.pr-col').style.display !== 'none';
+    if (prVisible && (prInfo.days > 0 || prInfo.dates.length > 0)) {
+      html += '<span class="dlabel">PR:</span> ' + fmtScheduleDates(prInfo.dates, prInfo.days) + '<br>';
+      hasSchedule = true;
+    }
+    if (!hasSchedule) {
+      html += '<span class="none">None</span>';
+    }
+    html += '</div>';
+
+    // Full-width: Committed Tasks
+    html += '<div class="detail-tasks"><h4>Committed Tasks' + (tasks.length > 0 ? ' (' + tasks.length + ')' : '') + '</h4>';
+    if (tasks.length > 0) {
+      html += '<table><thead><tr><th>Key</th><th>Summary</th><th style="text-align:right">SP</th></tr></thead><tbody>';
+      tasks.forEach(function(t) {
+        html += '<tr><td><a href="https://jira.autodesk.com/browse/' + t.key + '" target="_blank">' + t.key + '</a></td>';
+        html += '<td>' + t.summary + '</td>';
+        html += '<td>' + (t.sp > 0 ? t.sp.toFixed(1) : '\u2014') + '</td></tr>';
+      });
+      html += '</tbody><tfoot><tr><td colspan="2" style="text-align:right;font-weight:600">Total</td>';
+      html += '<td style="font-weight:600">' + totalSP.toFixed(1) + ' SP</td></tr></tfoot></table>';
+    } else {
+      html += '<span class="none">No tasks committed</span>';
+    }
+    html += '</div>';
+
+    html += '</div>';
+    return html;
+  }
+
+  var DEDUCT_COLS = ['absence', 'pa', 'pr', 'ktlo', 'events', 'hack', 'training'];
 
   function applyPAVisibility() {
     var enabled = teamConfig.pa_enabled !== false;
@@ -708,6 +896,24 @@
     }
   }
 
+  function applyPRVisibility() {
+    var enabled = teamConfig.pr_enabled !== false;
+    var link = document.getElementById('pr-col-link');
+    if (link) link.href = teamConfig.pr_confluence_url || '';
+    document.querySelectorAll('.pr-col').forEach(function(el) {
+      el.style.display = enabled ? '' : 'none';
+    });
+    if (!enabled) {
+      document.querySelectorAll('.deduct-input[data-col="pr"]').forEach(function(inp) {
+        inp.value = 0;
+      });
+      document.querySelectorAll('[data-person]').forEach(function(row) {
+        recomputeCapacity(row);
+      });
+      recomputeTeamCapacity();
+    }
+  }
+
   function buildCapacityRows(team, effMap) {
     var tbody = document.getElementById('capacity-body');
     // Remove existing person rows (keep total-row)
@@ -720,9 +926,9 @@
       var tr = document.createElement('tr');
       tr.dataset.person = name;
       tr.dataset.workingDays = '10';
-      var html = '<td class="person">' + name + '</td>';
+      var html = '<td class="person" onclick="togglePersonDetail(this)">' + name + '</td>';
       DEDUCT_COLS.forEach(function(col) {
-        var extraCls = col === 'pa' ? ' pa-col' : '';
+        var extraCls = col === 'pa' ? ' pa-col' : col === 'pr' ? ' pr-col' : '';
         html += '<td class="num' + extraCls + '"><input class="deduct-input" type="number" min="0" step="0.5" value="0" data-col="' + col + '"></td>';
       });
       html += '<td class="num avail-display">10.0</td>';
@@ -1714,12 +1920,20 @@
     paCb.checked = cfg.pa_enabled !== false;
     document.getElementById('settings-pa-url').value = cfg.pa_confluence_url || '';
     document.getElementById('settings-pa-url-row').style.display = paCb.checked ? '' : 'none';
+    // PR toggle
+    var prCb = document.getElementById('settings-pr-enabled');
+    prCb.checked = cfg.pr_enabled !== false;
+    document.getElementById('settings-pr-url').value = cfg.pr_confluence_url || '';
+    document.getElementById('settings-pr-url-row').style.display = prCb.checked ? '' : 'none';
     // Buffer default
     document.getElementById('settings-buffer').value = cfg.unscheduled_buffer != null ? cfg.unscheduled_buffer : 5;
   };
 
   document.getElementById('settings-pa-enabled').addEventListener('change', function() {
     document.getElementById('settings-pa-url-row').style.display = this.checked ? '' : 'none';
+  });
+  document.getElementById('settings-pr-enabled').addEventListener('change', function() {
+    document.getElementById('settings-pr-url-row').style.display = this.checked ? '' : 'none';
   });
 
   window.closeSettings = function() {
@@ -1857,6 +2071,8 @@
     var boardId = m ? parseInt(m[1]) : teamConfig.board_id;
     var paEnabled = document.getElementById('settings-pa-enabled').checked;
     var paUrl = document.getElementById('settings-pa-url').value.trim();
+    var prEnabled = document.getElementById('settings-pr-enabled').checked;
+    var prUrl = document.getElementById('settings-pr-url').value.trim();
     var bufferDefault = parseFloat(document.getElementById('settings-buffer').value);
     if (isNaN(bufferDefault) || bufferDefault < 0) bufferDefault = 5;
 
@@ -1865,6 +2081,8 @@
       board_url: url,
       pa_enabled: paEnabled,
       pa_confluence_url: paUrl,
+      pr_enabled: prEnabled,
+      pr_confluence_url: prUrl,
       unscheduled_buffer: bufferDefault,
     };
     fetch('http://localhost:5000/api/config', {
@@ -1875,13 +2093,17 @@
     .then(function(r) { return r.json(); })
     .then(function(d) {
       if (d.ok) {
-        var paWasOff = teamConfig.pa_enabled === false;
+        var paWasOff = !teamConfig.pa_enabled;
+        var prWasOff = !teamConfig.pr_enabled;
         teamConfig.board_id = boardId;
         teamConfig.board_url = url;
         teamConfig.pa_enabled = paEnabled;
         teamConfig.pa_confluence_url = paUrl;
+        teamConfig.pr_enabled = prEnabled;
+        teamConfig.pr_confluence_url = prUrl;
         teamConfig.unscheduled_buffer = bufferDefault;
         applyPAVisibility();
+        applyPRVisibility();
         closeSettings();
         showToast('Settings saved', 'success');
         // If PA was just re-enabled, refresh PA data
@@ -1899,6 +2121,22 @@
             })
             .then(function() { showToast('PA schedule updated', 'success'); })
             .catch(function() { showToast('Could not refresh PA — try reloading', 'warn'); });
+        }
+        // If PR was just re-enabled, refresh PR data
+        if (prEnabled && prWasOff) {
+          showToast('Refreshing PR schedule...', 'info');
+          fetch('http://localhost:5000/api/pr-status', { signal: AbortSignal.timeout(10000) })
+            .then(function(r) { return r.json(); })
+            .then(function(ps) {
+              if (!ps.fresh) {
+                return fetch('http://localhost:5000/api/fetch-pr', { signal: AbortSignal.timeout(15000) });
+              }
+            })
+            .then(function() {
+              return initSprintInfo().then(function() { refreshTasks(true); });
+            })
+            .then(function() { showToast('PR schedule updated', 'success'); })
+            .catch(function() { showToast('Could not refresh PR — try reloading', 'warn'); });
         }
       } else {
         showToast('Save failed: ' + (d.error || 'unknown'), 'error');
@@ -1932,6 +2170,9 @@
     var paRow        = document.getElementById('svc-pa');
     var paIcon       = document.getElementById('svc-pa-icon');
     var paHint       = document.getElementById('svc-pa-hint');
+    var prRow        = document.getElementById('svc-pr');
+    var prIcon       = document.getElementById('svc-pr-icon');
+    var prHint       = document.getElementById('svc-pr-hint');
 
     function setRow(icon, hint, state, msg) {
       icon.textContent = state === 'ok' ? '✓' : state === 'err' ? '✗' : '⏳';
@@ -1949,6 +2190,8 @@
           if (data.efficiency) teamConfig.efficiency = data.efficiency;
           if ('pa_enabled' in data) teamConfig.pa_enabled = data.pa_enabled;
           if ('pa_confluence_url' in data) teamConfig.pa_confluence_url = data.pa_confluence_url;
+          if ('pr_enabled' in data) teamConfig.pr_enabled = data.pr_enabled;
+          if ('pr_confluence_url' in data) teamConfig.pr_confluence_url = data.pr_confluence_url;
           if ('unscheduled_buffer' in data) {
             teamConfig.unscheduled_buffer = data.unscheduled_buffer;
             var bi = document.getElementById('buffer-input');
@@ -1977,6 +2220,13 @@
           var dateStr = months[s.getMonth()] + ' ' + s.getDate() + ' \u2013 ' + months[e.getMonth()] + ' ' + e.getDate() + ', ' + s.getFullYear();
           document.getElementById('meta-dates').textContent = '\uD83D\uDCC5 ' + dateStr;
           document.getElementById('meta-working-days').textContent = '\u23F1 ' + data.working_days + ' working days';
+          // Store detail data for person expand rows
+          window._sprintDetail = {
+            absences: data.absence_detail || {},
+            pa: data.pa_detail || {},
+            pr: data.pr_detail || {},
+          };
+
           var hCount = data.holidays_in_sprint.length;
           var hText = hCount === 0 ? '0 holidays' : hCount + ' holiday' + (hCount > 1 ? 's' : '') + ': ' + data.holidays_in_sprint.map(function(h) { return h.name; }).join(', ');
           document.getElementById('meta-holidays').textContent = '\uD83C\uDFD6 ' + hText;
@@ -2003,10 +2253,19 @@
                 toggleHasValue(paInput);
               }
             }
+            if (data.pr && teamConfig.pr_enabled !== false) {
+              var prInput = row.querySelector('.deduct-input[data-col="pr"]');
+              if (prInput) {
+                var personPR = data.pr[row.dataset.person] || 0;
+                prInput.value = personPR;
+                toggleHasValue(prInput);
+              }
+            }
             recomputeCapacity(row);
           });
           recomputeTeamCapacity();
           applyPAVisibility();
+          applyPRVisibility();
           // Initialize backlog sections from prefs
           return initBacklogs(data.backlog_sprints);
         })
@@ -2105,17 +2364,21 @@
             fetch('http://localhost:5000/api/team-status', { signal: AbortSignal.timeout(7000) })
               .then(function(r) { return r.json(); })
               .then(function(d) {
-                // Store PA config early so checkPA can use it
+                // Store PA/PR config early so checks can use it
                 if ('pa_enabled' in d) teamConfig.pa_enabled = d.pa_enabled;
                 if ('pa_confluence_url' in d) teamConfig.pa_confluence_url = d.pa_confluence_url;
+                if ('pr_enabled' in d) teamConfig.pr_enabled = d.pr_enabled;
+                if ('pr_confluence_url' in d) teamConfig.pr_confluence_url = d.pr_confluence_url;
                 if (d.configured) {
                   checkAbsences();
                 } else {
-                  // No team — skip absence/PA checks, go straight to dismiss
+                  // No team — skip absence/PA/PR checks, go straight to dismiss
                   absRow.style.display = '';
                   setRow(absIcon, absHint, 'ok', 'Skipped — no team configured yet');
                   paRow.style.display = '';
                   setRow(paIcon, paHint, 'ok', 'Skipped — no team configured yet');
+                  prRow.style.display = '';
+                  setRow(prIcon, prHint, 'ok', 'Skipped — no team configured yet');
                   dismiss();
                 }
               })
@@ -2247,7 +2510,7 @@
     // Exposed so settings/team-refresh can trigger absence+PA checks after team is configured
     // Runs in background with toast messages — does NOT re-show the startup overlay
     window.triggerAbsenceAndPAChecks = function() {
-      showToast('Checking absences & PA schedule...', 'info');
+      showToast('Checking absences & schedules...', 'info');
 
       fetch('http://localhost:5000/api/absence-status', { signal: AbortSignal.timeout(10000) })
         .then(function(r) { return r.json(); })
@@ -2269,11 +2532,21 @@
             });
         })
         .then(function() {
+          if (teamConfig.pr_enabled === false) return;
+          return fetch('http://localhost:5000/api/pr-status', { signal: AbortSignal.timeout(10000) })
+            .then(function(r) { return r.json(); })
+            .then(function(d) {
+              if (!d.fresh) {
+                return fetch('http://localhost:5000/api/fetch-pr', { signal: AbortSignal.timeout(15000) });
+              }
+            });
+        })
+        .then(function() {
           initSprintInfo().then(function() { refreshTasks(true); });
-          showToast('Absences & PA schedule updated', 'success');
+          showToast('Absences & schedules updated', 'success');
         })
         .catch(function() {
-          showToast('Could not fetch absences/PA — check manually', 'warn');
+          showToast('Could not fetch absences/schedules — check manually', 'warn');
           initSprintInfo().then(function() { refreshTasks(true); });
         });
     };
@@ -2283,7 +2556,7 @@
       if (teamConfig.pa_enabled === false) {
         paRow.style.display = '';
         setRow(paIcon, paHint, 'ok', 'Disabled in settings');
-        dismiss();
+        checkPR();
         return;
       }
       paRow.style.display = '';
@@ -2293,7 +2566,7 @@
         .then(function(d) {
           if (d.fresh) {
             setRow(paIcon, paHint, 'ok', 'Cached (' + d.age_hours + 'h old)');
-            dismiss();
+            checkPR();
           } else {
             // PA can be fetched automatically (no browser needed), so try it
             paHint.innerHTML = (d.message || 'PA schedule not available') +
@@ -2323,7 +2596,7 @@
         .then(function(d) {
           if (d.ok) {
             setRow(paIcon, paHint, 'ok', 'Updated');
-            dismiss();
+            checkPR();
           } else {
             setRow(paIcon, paHint, 'err', 'Fetch failed: ' + (d.error || 'unknown'));
           }
@@ -2335,6 +2608,65 @@
 
     window.skipPA = function() {
       setRow(paIcon, paHint, 'ok', 'Skipped - using cached/empty data');
+      checkPR();
+    };
+
+    // ── PR review schedule check (runs after PA) ──
+    function checkPR() {
+      if (teamConfig.pr_enabled === false) {
+        prRow.style.display = '';
+        setRow(prIcon, prHint, 'ok', 'Disabled in settings');
+        dismiss();
+        return;
+      }
+      prRow.style.display = '';
+      setRow(prIcon, prHint, 'checking', 'Checking PR schedule cache...');
+      fetch('http://localhost:5000/api/pr-status', { signal: AbortSignal.timeout(10000) })
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+          if (d.fresh) {
+            setRow(prIcon, prHint, 'ok', 'Cached (' + d.age_hours + 'h old)');
+            dismiss();
+          } else {
+            prHint.innerHTML = (d.message || 'PR schedule not available') +
+              ' &nbsp;<button onclick="refreshPR(this)" style="background:#0052cc;color:#fff;' +
+              'border:none;border-radius:3px;padding:3px 10px;font-size:11px;font-weight:600;' +
+              'cursor:pointer;">Fetch from Confluence</button>' +
+              ' &nbsp;<button onclick="skipPR()" style="background:transparent;color:#5e6c84;' +
+              'border:1px solid #dfe1e6;border-radius:3px;padding:3px 10px;font-size:11px;' +
+              'cursor:pointer;">Skip</button>';
+            prIcon.textContent = '\u26A0';
+            prIcon.style.color = '#ff8b00';
+            prHint.className = 'svc-hint';
+          }
+        })
+        .catch(function() {
+          setRow(prIcon, prHint, 'err', 'Failed to check PR status');
+          setTimeout(checkPR, 4000);
+        });
+    }
+
+    window.refreshPR = function(btn) {
+      btn.disabled = true;
+      btn.textContent = 'Fetching...';
+      setRow(prIcon, prHint, 'checking', 'Fetching PR schedule from Confluence...');
+      fetch('http://localhost:5000/api/fetch-pr', { signal: AbortSignal.timeout(15000) })
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+          if (d.ok) {
+            setRow(prIcon, prHint, 'ok', 'Updated');
+            dismiss();
+          } else {
+            setRow(prIcon, prHint, 'err', 'Fetch failed: ' + (d.error || 'unknown'));
+          }
+        })
+        .catch(function() {
+          setRow(prIcon, prHint, 'err', 'Fetch failed - check Confluence auth');
+        });
+    };
+
+    window.skipPR = function() {
+      setRow(prIcon, prHint, 'ok', 'Skipped - using cached/empty data');
       dismiss();
     };
 

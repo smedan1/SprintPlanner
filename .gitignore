@@ -2,6 +2,7 @@
 team-config.json
 absences.json
 pa-schedule.json
+pr-schedule.json
 backlog-prefs.json
 __pycache__/
 icons/

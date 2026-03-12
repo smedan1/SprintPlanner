@@ -32,6 +32,7 @@ Efficiency is also editable directly in the capacity table UI and auto-saved to 
 - **Hackathon**: company hackathon days
 - **Training**: learning & development time
 - **PA (Promotion Analysis)**: optional; 1-day duty monitoring the staging build for promotion decisions. Enabled/disabled per team in settings.
+- **PR (Pull Request Review)**: optional; cross-team PR review rotation duty. Each duty day = 0.5-day deduction. Schedule read from Confluence. Enabled/disabled per team in settings.
 - **KTLO**: Keep The Lights On — operational/maintenance work
 - **Unscheduled**: team-level buffer for mid-sprint critical priority unplanned work; default **5 SP per sprint**
 
@@ -50,6 +51,8 @@ All team-specific settings are stored in `team-config.json`:
   },
   "pa_enabled": true,
   "pa_confluence_url": "https://your-instance.atlassian.net/wiki/...",
+  "pr_enabled": true,
+  "pr_confluence_url": "https://autodesk.atlassian.net/wiki/x/fJH5L",
   "confluence_account_ids": {}
 }
 ```
@@ -64,9 +67,12 @@ Settings are managed via the gear icon in the UI header. On first run with no te
 ### Absence scraper (Workday)
 - Script: `fetch-absences.py` — Python Playwright, headed Chrome, manual SSO login
 - Run: `python fetch-absences.py YYYY-MM-DD YYYY-MM-DD` (sprint start and end, end exclusive)
-- Output: `absences.json` — absence days per team member within the sprint window
+- Output: `absences.json` — absence hours, days, and exact dates per team member within the sprint window
 - Workday Team Absence Calendar URL: `https://www.myworkday.com/autodesk/d/task/2997$12517.htmld`
 - Also triggered automatically from the startup overlay or after team configuration
+- **How it works**: navigates week by week through the sprint window, clicks each absence event block to open the "Absence Entries" popup, scrapes exact date ranges and duration per day, then filters to the sprint window
+- Deduplicates entries across weeks (same absence request appears in popups regardless of which week's block is clicked)
+- No pro-rating — uses exact dates from Workday popups
 
 ### Team scraper (Workday)
 - Script: `fetch-team.py` — Python Playwright, headed Chrome, manual SSO login
@@ -80,11 +86,14 @@ Settings are managed via the gear icon in the UI header. On first run with no te
 - Jira instance: `https://jira.autodesk.com`
 - **Direct REST API is blocked by Autodesk corporate policy — always use MCP tools**
 
-### Confluence (via MCP — for PA schedule)
+### Confluence (via MCP — for PA and PR schedules)
 - MCP server: `confluence-wiki-api` (configured in `~/.claude.json`, OAuth via `mcp.atlassian.com`)
 - PA schedule page URL is configured in `team-config.json` (`pa_confluence_url`)
 - For each sprint, check the schedule for entries whose date falls within `[start_date, end_date)` — reserve 1 day PA per person matched
 - PA is optional — can be disabled in settings for teams that don't use it
+- PR review schedule page URL is configured in `team-config.json` (`pr_confluence_url`)
+- PR page has a 3-column table (Team, Person, Date). Only "Gemini" rows are included. Each duty day = 0.5-day deduction
+- PR is optional — can be disabled in settings for teams that don't use it
 
 ## Jira Boards & Sprints
 
@@ -135,6 +144,7 @@ Stored in `holidays.json`. Covers Canada + Quebec holidays for **2026**.
 - **Editable SP**: type a new value in the SP column; SP=0 means 4h in Jira timetracking
 - **Editable Assignee**: dropdown restricted to team members
 - **Editable Priority**: custom dropdown with Jira priority icons (Showstopper, Critical, Major, Minor, None)
+- **Person detail view**: click a person's name in the capacity table to expand an inline detail row showing vacation date ranges, PA/PR schedule dates, and committed tasks
 - **Editable Efficiency %**: per-person, recalculates capacity in real time, auto-saved to config
 - **Editable Unscheduled Buffer**: team-level buffer, recalculates net capacity in real time
 - **Draggable backlog sections**: drag backlog headers to reorder; order persists in `backlog-prefs.json`
@@ -174,5 +184,6 @@ Stored in `holidays.json`. Covers Canada + Quebec holidays for **2026**.
 | `holidays.json` | Holiday calendar (Canada + Quebec) |
 | `absences.json` | Cached absence data for current sprint |
 | `pa-schedule.json` | Cached PA schedule for current sprint |
+| `pr-schedule.json` | Cached PR review schedule for current sprint |
 | `backlog-prefs.json` | Saved backlog sprint selections |
 | `.mcp.json` | MCP server config with Jira token (gitignored) |

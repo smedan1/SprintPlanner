@@ -480,13 +480,50 @@ def load_absences() -> dict:
         return {}
 
 
+def load_absence_detail() -> dict:
+    """Read absences.json with date details. Returns {person: {days, dates}}."""
+    path = os.path.join(SCRIPT_DIR, 'absences.json')
+    try:
+        with open(path, 'r') as f:
+            raw = json.load(f)
+        absences = raw.get('absences', {})
+        result = {}
+        for name, info in absences.items():
+            result[name] = {
+                'days': info.get('days', 0),
+                'dates': info.get('dates', []),
+            }
+        return result
+    except Exception:
+        return {}
+
+
 def load_pa_schedule() -> dict:
     """Read pa-schedule.json if it exists. Returns {person: days} mapping."""
     path = os.path.join(SCRIPT_DIR, 'pa-schedule.json')
     try:
         with open(path, 'r') as f:
             raw = json.load(f)
-        return raw.get('pa', {})
+        pa = raw.get('pa', {})
+        return {name: (v['days'] if isinstance(v, dict) else v) for name, v in pa.items()}
+    except Exception:
+        return {}
+
+
+def load_pa_schedule_full() -> dict:
+    """Read pa-schedule.json with date details. Returns {person: {days, dates}}."""
+    path = os.path.join(SCRIPT_DIR, 'pa-schedule.json')
+    try:
+        with open(path, 'r') as f:
+            raw = json.load(f)
+        pa = raw.get('pa', {})
+        result = {}
+        for name, v in pa.items():
+            if isinstance(v, dict):
+                result[name] = v
+            else:
+                result[name] = {'days': v, 'dates': []}
+        return result
     except Exception:
         return {}
 
@@ -531,12 +568,50 @@ def _get_pa_page_id() -> str:
 
 
 def _match_name_to_team(raw_name: str, team: list[str]) -> str | None:
-    """Match a raw name from Confluence to a team member (exact, case-insensitive)."""
+    """Match a raw name from Confluence to a team member (exact, case-insensitive).
+    Also handles mojibake (double-encoded UTF-8) by trying latin-1 → utf-8 decode."""
     raw_lower = raw_name.lower().strip()
     for t in team:
         if t.lower() == raw_lower:
             return t
+    # Try fixing mojibake: if the name was double-encoded, decode latin-1 → utf-8
+    try:
+        fixed = raw_name.encode('latin-1').decode('utf-8').lower().strip()
+        for t in team:
+            if t.lower() == fixed:
+                return t
+    except (UnicodeDecodeError, UnicodeEncodeError):
+        pass
     return None
+
+
+def _normalize_account_map(account_map: dict, team: list[str]) -> dict:
+    """Re-validate account map values against the team list.
+    Fixes stale or mojibake entries (e.g. double-encoded Unicode).
+    Also persists corrections back to team-config.json."""
+    fixed = {}
+    needs_save = False
+    for aid, name in account_map.items():
+        if name in team:
+            fixed[aid] = name
+        else:
+            matched = _match_name_to_team(name, team)
+            if matched:
+                fixed[aid] = matched
+                needs_save = True
+            else:
+                fixed[aid] = name
+    if needs_save:
+        cfg = load_team_config()
+        aid_map = cfg.get('confluence_account_ids', {})
+        for aid, name in fixed.items():
+            if aid in aid_map and aid_map[aid] != name and name in team:
+                aid_map[aid] = name
+        cfg['confluence_account_ids'] = aid_map
+        save_team_config(cfg)
+        invalidate_team_config_cache()
+        print(f'  > Fixed mojibake in confluence_account_ids')
+    return fixed
 
 
 def _discover_account_ids_from_view(page_id: str, token: str, team: list[str]) -> dict:
@@ -613,6 +688,7 @@ def fetch_pa_from_confluence(sprint_start_str: str, sprint_end_str: str) -> dict
 
     account_map = dict(get_account_id_map())  # copy so we can augment
     team = get_team()
+    account_map = _normalize_account_map(account_map, team)
 
     # If account map is incomplete, try to discover mappings from the view format
     # Collect all account IDs from the storage body first
@@ -654,7 +730,10 @@ def fetch_pa_from_confluence(sprint_start_str: str, sprint_end_str: str) -> dict
         for account_id in user_pattern.findall(tr_html):
             name = account_map.get(account_id)
             if name and name in team:
-                pa_days[name] = pa_days.get(name, 0) + 1
+                if name not in pa_days:
+                    pa_days[name] = {'days': 0, 'dates': []}
+                pa_days[name]['days'] += 1
+                pa_days[name]['dates'].append(pa_date.isoformat())
 
     # Auto-save discovered account ID mappings for future use
     if discovered_names:
@@ -713,6 +792,209 @@ def check_pa_freshness() -> dict:
     if age_hours >= 24:
         return {**base, 'fresh': False, 'reason': 'stale',
                 'message': 'pa-schedule.json is ' + str(round(age_hours)) + 'h old (>24h)'}
+
+    return {**base, 'fresh': True, 'age_hours': round(age_hours, 1)}
+
+
+# ── PR (Pull Request Review) Schedule ──────────────────────────────────────
+
+def load_pr_schedule() -> dict:
+    """Read pr-schedule.json if it exists. Returns {person: days} mapping."""
+    path = os.path.join(SCRIPT_DIR, 'pr-schedule.json')
+    try:
+        with open(path, 'r') as f:
+            raw = json.load(f)
+        pr = raw.get('pr', {})
+        return {name: (v['days'] if isinstance(v, dict) else v) for name, v in pr.items()}
+    except Exception:
+        return {}
+
+
+def load_pr_schedule_full() -> dict:
+    """Read pr-schedule.json with date details. Returns {person: {days, dates}}."""
+    path = os.path.join(SCRIPT_DIR, 'pr-schedule.json')
+    try:
+        with open(path, 'r') as f:
+            raw = json.load(f)
+        pr = raw.get('pr', {})
+        result = {}
+        for name, v in pr.items():
+            if isinstance(v, dict):
+                result[name] = v
+            else:
+                result[name] = {'days': v, 'dates': []}
+        return result
+    except Exception:
+        return {}
+
+
+def _get_pr_page_id() -> str:
+    """Extract the Confluence page ID from the configured PR URL."""
+    cfg = load_team_config()
+    pr_url = cfg.get('pr_confluence_url', '')
+    m = re.search(r'/pages/(\d+)', pr_url)
+    if m:
+        return m.group(1)
+    if '/wiki/x/' in pr_url or '/wiki/spaces/' in pr_url:
+        try:
+            token = get_confluence_session_token()
+            req = urllib.request.Request(pr_url, method='GET', headers={
+                'Cookie': f'cloud.session.token={token}' if token else '',
+            })
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                final_url = resp.url
+            m = re.search(r'/pages/(\d+)', final_url)
+            if m:
+                return m.group(1)
+        except Exception:
+            pass
+    return ''
+
+
+def fetch_pr_from_confluence(sprint_start_str: str, sprint_end_str: str) -> dict:
+    """Fetch PR review schedule from Confluence, parse it, return {person: days} for the sprint.
+    Each PR duty day counts as 0.5 days. sprint_end is exclusive.
+    Only rows where Team column contains 'Gemini' are included."""
+    token = get_confluence_session_token()
+    if not token:
+        raise RuntimeError('No Confluence session token')
+
+    page_id = _get_pr_page_id()
+    if not page_id:
+        raise RuntimeError('No PR Confluence page configured (set pr_confluence_url in settings)')
+
+    req = urllib.request.Request(
+        f'https://autodesk.atlassian.net/wiki/api/v2/pages/{page_id}?body-format=storage',
+        method='GET',
+        headers={
+            'Cookie': f'cloud.session.token={token}',
+            'Accept': 'application/json',
+        }
+    )
+    with urllib.request.urlopen(req, timeout=15) as resp:
+        data = json.loads(resp.read().decode('utf-8'))
+
+    body = data.get('body', {}).get('storage', {}).get('value', '')
+    s_start = date.fromisoformat(sprint_start_str)
+    s_end = date.fromisoformat(sprint_end_str)
+
+    tr_pattern = re.compile(r'<tr[^>]*>(.*?)</tr>', re.DOTALL)
+    td_pattern = re.compile(r'<td[^>]*>(.*?)</td>', re.DOTALL)
+    time_pattern = re.compile(r'<time\s+datetime="(\d{4}-\d{2}-\d{2})"')
+    user_pattern = re.compile(r'ri:account-id="([^"]+)"')
+
+    account_map = dict(get_account_id_map())
+    team = get_team()
+    account_map = _normalize_account_map(account_map, team)
+
+    # Discover unmapped account IDs if needed
+    all_account_ids = set(user_pattern.findall(body))
+    unmapped = all_account_ids - set(account_map.keys())
+    discovered_names = {}
+    if unmapped:
+        print(f'  > PR: {len(unmapped)} unmapped account IDs, fetching view format...')
+        discovered_names = _discover_account_ids_from_view(page_id, token, team)
+        for aid, name in discovered_names.items():
+            if aid not in account_map:
+                account_map[aid] = name
+
+    pr_days = {}
+    for tr_match in tr_pattern.finditer(body):
+        tr_html = tr_match.group(1)
+        tds = td_pattern.findall(tr_html)
+        if len(tds) < 3:
+            continue
+
+        # First column is Team — only include "Gemini" rows
+        team_cell = re.sub(r'<[^>]+>', '', tds[0]).strip().lower()
+        if 'gemini' not in team_cell:
+            continue
+
+        # Extract date from the row
+        pr_date = None
+        time_m = time_pattern.search(tr_html)
+        if time_m:
+            try:
+                pr_date = date.fromisoformat(time_m.group(1))
+            except ValueError:
+                pass
+        if pr_date is None:
+            # Try plain text date
+            date_text = re.sub(r'<[^>]+>', '', tds[2]).strip()
+            pr_date = _parse_pa_date(date_text)
+        if pr_date is None:
+            continue
+
+        # Check if date falls within sprint [start, end)
+        if pr_date < s_start or pr_date >= s_end:
+            continue
+
+        # Extract users from the Person column (second <td>)
+        for account_id in user_pattern.findall(tds[1]):
+            name = account_map.get(account_id)
+            if name and name in team:
+                if name not in pr_days:
+                    pr_days[name] = {'days': 0, 'dates': []}
+                pr_days[name]['days'] += 0.5
+                pr_days[name]['dates'].append(pr_date.isoformat())
+
+    # Auto-save discovered account ID mappings
+    if discovered_names:
+        cfg = load_team_config()
+        aid_map = cfg.get('confluence_account_ids', {})
+        changed = False
+        for aid, nm in discovered_names.items():
+            if aid not in aid_map and nm in team:
+                aid_map[aid] = nm
+                changed = True
+        if changed:
+            cfg['confluence_account_ids'] = aid_map
+            save_team_config(cfg)
+            invalidate_team_config_cache()
+            print(f'  > PR: Auto-saved Confluence account IDs: {discovered_names}')
+
+    return pr_days
+
+
+def save_pr_schedule(sprint_start: str, sprint_end: str, pr: dict) -> None:
+    """Write pr-schedule.json cache."""
+    path = os.path.join(SCRIPT_DIR, 'pr-schedule.json')
+    with open(path, 'w') as f:
+        json.dump({
+            'sprint_start': sprint_start,
+            'sprint_end': sprint_end,
+            'pr': pr,
+        }, f, indent=2)
+
+
+def check_pr_freshness() -> dict:
+    """Check whether pr-schedule.json is fresh for the current sprint."""
+    path = os.path.join(SCRIPT_DIR, 'pr-schedule.json')
+    sprint, _ = get_future_sprint_info_cached(get_board_id())
+    if not sprint:
+        return {'fresh': False, 'reason': 'no_sprint', 'message': 'Cannot detect sprint'}
+    sprint_start = sprint['startDate'][:10]
+    sprint_end = sprint['endDate'][:10]
+    base = {'sprint_start': sprint_start, 'sprint_end': sprint_end}
+
+    if not os.path.exists(path):
+        return {**base, 'fresh': False, 'reason': 'missing', 'message': 'No pr-schedule.json found'}
+
+    age_hours = (time.time() - os.path.getmtime(path)) / 3600
+    try:
+        with open(path, 'r') as f:
+            data = json.load(f)
+        file_start = data.get('sprint_start', '')
+    except Exception:
+        return {**base, 'fresh': False, 'reason': 'corrupt', 'message': 'Cannot read pr-schedule.json'}
+
+    if file_start != sprint_start:
+        return {**base, 'fresh': False, 'reason': 'wrong_sprint',
+                'message': 'Cached for ' + file_start + ', need ' + sprint_start}
+
+    if age_hours >= 24:
+        return {**base, 'fresh': False, 'reason': 'stale',
+                'message': 'pr-schedule.json is ' + str(round(age_hours)) + 'h old (>24h)'}
 
     return {**base, 'fresh': True, 'age_hours': round(age_hours, 1)}
 
@@ -884,6 +1166,8 @@ class Handler(BaseHTTPRequestHandler):
                 'configured': len(team) > 0, 'count': len(team), 'team': team,
                 'pa_enabled': cfg.get('pa_enabled', False),
                 'pa_confluence_url': cfg.get('pa_confluence_url', ''),
+                'pr_enabled': cfg.get('pr_enabled', False),
+                'pr_confluence_url': cfg.get('pr_confluence_url', ''),
             })
             return
 
@@ -945,6 +1229,30 @@ class Handler(BaseHTTPRequestHandler):
                 self._respond(500, {'ok': False, 'error': str(e)})
             return
 
+        # ── /api/pr-status ── check if pr-schedule.json is fresh
+        if parsed.path == '/api/pr-status':
+            result = check_pr_freshness()
+            self._respond(200, result)
+            return
+
+        # ── /api/fetch-pr ── fetch PR schedule from Confluence and cache it
+        if parsed.path == '/api/fetch-pr':
+            sprint, _ = get_future_sprint_info_cached(get_board_id())
+            if not sprint:
+                self._respond(500, {'ok': False, 'error': 'Cannot detect sprint dates'})
+                return
+            start = sprint['startDate'][:10]
+            end = sprint['endDate'][:10]
+            try:
+                pr = fetch_pr_from_confluence(start, end)
+                save_pr_schedule(start, end, pr)
+                print(f'  > PR schedule fetched: {pr}')
+                self._respond(200, {'ok': True, 'pr': pr})
+            except Exception as e:
+                print(f'  x PR fetch failed: {e}')
+                self._respond(500, {'ok': False, 'error': str(e)})
+            return
+
         # ── /api/sprint-issues ──
         if parsed.path == '/api/sprint-issues':
             qs           = urllib.parse.parse_qs(parsed.query)
@@ -973,8 +1281,13 @@ class Handler(BaseHTTPRequestHandler):
             team = cfg.get('team', [])
             abs_data = load_absences()
             absences = {name: abs_data.get(name, 0) for name in team}
+            abs_detail = load_absence_detail()
             pa_data = load_pa_schedule()
             pa = {name: pa_data.get(name, 0) for name in team}
+            pa_full = load_pa_schedule_full()
+            pr_data = load_pr_schedule()
+            pr = {name: pr_data.get(name, 0) for name in team}
+            pr_full = load_pr_schedule_full()
             print(f'  > Sprint info: {sprint["name"]} ({start_str} to {end_str}), {working_days} working days')
             self._respond(200, {
                 'sprint_id': sprint['id'],
@@ -984,12 +1297,18 @@ class Handler(BaseHTTPRequestHandler):
                 'working_days': working_days,
                 'holidays_in_sprint': holidays_in_sprint,
                 'absences': absences,
+                'absence_detail': {name: abs_detail.get(name, {'days': 0, 'dates': []}) for name in team},
                 'pa': pa,
+                'pa_detail': {name: pa_full.get(name, {'days': 0, 'dates': []}) for name in team},
+                'pr': pr,
+                'pr_detail': {name: pr_full.get(name, {'days': 0, 'dates': []}) for name in team},
                 'backlog_sprints': backlog,
                 'team': team,
                 'efficiency': get_efficiency_map(),
                 'pa_enabled': cfg.get('pa_enabled', False),
                 'pa_confluence_url': cfg.get('pa_confluence_url', ''),
+                'pr_enabled': cfg.get('pr_enabled', False),
+                'pr_confluence_url': cfg.get('pr_confluence_url', ''),
                 'unscheduled_buffer': cfg.get('unscheduled_buffer', 5),
             })
             return
@@ -1036,7 +1355,7 @@ class Handler(BaseHTTPRequestHandler):
                 data = json.loads(body)
                 cfg = load_team_config()
                 # Only update allowed fields
-                for key in ('board_id', 'board_url', 'team', 'efficiency', 'confluence_account_ids', 'pa_enabled', 'pa_confluence_url', 'unscheduled_buffer'):
+                for key in ('board_id', 'board_url', 'team', 'efficiency', 'confluence_account_ids', 'pa_enabled', 'pa_confluence_url', 'pr_enabled', 'pr_confluence_url', 'unscheduled_buffer'):
                     if key in data:
                         cfg[key] = data[key]
                 save_team_config(cfg)

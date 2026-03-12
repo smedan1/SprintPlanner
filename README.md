@@ -77,6 +77,7 @@ On first launch with no team configured, the Settings modal opens automatically.
 - **Drag tasks** from backlog sections into Sprint Commitment (or back)
 - **Right-click tasks** to move them via a context menu (useful when the destination requires a lot of scrolling)
 - **Edit SP** directly in the table (click the SP cell)
+- **Click a person's name** in the capacity table to expand a detail row showing vacation date ranges, PA/PR schedule dates, and committed tasks
 - **Edit assignees** via dropdown in each row
 - **Edit priority** via a custom dropdown with Jira priority icons
 - **Edit efficiency %** per person (auto-saved to config)
@@ -100,6 +101,8 @@ All settings are stored in `team-config.json`:
   },
   "pa_enabled": false,
   "pa_confluence_url": "",
+  "pr_enabled": false,
+  "pr_confluence_url": "",
   "confluence_account_ids": {},
   "unscheduled_buffer": 5
 }
@@ -114,13 +117,15 @@ All settings are stored in `team-config.json`:
 | `efficiency.<name>` | Per-person override (e.g. 50 for part-time, 0 for fully allocated elsewhere) |
 | `pa_enabled` | Whether PA column is shown in capacity table |
 | `pa_confluence_url` | Confluence page URL with PA schedule (required if PA enabled) |
+| `pr_enabled` | Whether PR review column is shown in capacity table |
+| `pr_confluence_url` | Confluence page URL with PR review rotation (required if PR enabled) |
 | `confluence_account_ids` | Mapping of Confluence account IDs to team member names (for PA parsing) |
 | `unscheduled_buffer` | Default unscheduled buffer in SP (default 5); overridable in the UI per session |
 
 ## Capacity Formula
 
 ```
-Person Capacity = (Working Days x Efficiency%) - Absence - Events - Hackathon - Training - PA - KTLO
+Person Capacity = (Working Days x Efficiency%) - Absence - Events - Hackathon - Training - PA - PR - KTLO
 Team Net Capacity = Sum of person capacities - Unscheduled buffer
 ```
 
@@ -150,6 +155,8 @@ Two Playwright scripts automate Workday data collection. Both open a headed Chro
 
 These scripts use your local Chrome with SSO cookies. On first run, you'll need to complete the SSO login manually in the browser window that opens.
 
+The absence scraper clicks each absence event block on the Workday calendar to open the "Absence Entries" popup, which reveals exact date ranges and duration per day. This avoids any pro-rating and gives accurate day counts even when absences span sprint boundaries.
+
 ## Confluence Integration (optional)
 
 If your team uses a PA (Promotion Analysis) rotation tracked in Confluence:
@@ -173,5 +180,6 @@ holidays.json          # Holiday calendar
 .mcp.json              # Jira MCP config with token (gitignored)
 absences.json          # Cached absence data (auto-generated)
 pa-schedule.json       # Cached PA schedule (auto-generated)
+pr-schedule.json       # Cached PR review schedule (auto-generated)
 backlog-prefs.json     # Saved backlog selections (auto-generated)
 ```
