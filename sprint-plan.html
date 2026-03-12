@@ -98,9 +98,9 @@
   .badge-blocked  { background: #ffebe6; color: #bf2600; }
   .badge-staging  { background: #e6fcff; color: #00636e; }
 
-  .pri-critical { color: #bf2600; }
-  .pri-major    { color: #ff8b00; }
-  .pri-minor    { color: #5e6c84; }
+  .pri-critical { }
+  .pri-major    { }
+  .pri-minor    { }
   .pri-icon     { width: 16px; height: 16px; vertical-align: text-bottom; margin-right: 2px; }
   .pri-picker { position: relative; display: inline-block; cursor: pointer; border-bottom: 1px dashed #c1c7d0; padding: 1px 2px; white-space: nowrap; }
   .pri-picker .pri-label { display: inline; }
@@ -810,6 +810,15 @@
     personRow.after(detailTr);
   };
 
+  function refreshOpenDetailRows() {
+    var detailRow = document.querySelector('tr.detail-row');
+    if (!detailRow) return;
+    var personRow = detailRow.previousElementSibling;
+    if (!personRow || !personRow.dataset.person) return;
+    var td = detailRow.querySelector('td');
+    td.innerHTML = buildPersonDetail(personRow);
+  }
+
   function buildPersonDetail(row) {
     var name = row.dataset.person;
     var detail = window._sprintDetail;
@@ -970,6 +979,7 @@
     tbody.appendChild(dragRow);
     updateCommitVisibility();
     recalculate();
+    refreshOpenDetailRows();
     var summary = dragRow.querySelectorAll('td')[1].textContent.trim();
     queueMove(dragRow.dataset.key, targetSprintId, dragRow.dataset.sourceSprint, summary);
   }
@@ -1061,6 +1071,7 @@
           targetTbody.appendChild(row);
           updateCommitVisibility();
           recalculate();
+          refreshOpenDetailRows();
           var summary = row.querySelectorAll('td')[1].textContent.trim();
           queueMove(row.dataset.key, parseInt(dest.id), row.dataset.sourceSprint, summary);
         }
@@ -1181,6 +1192,7 @@
         cleanPendingEdit(key);
         renderPendingPanel();
         recalculate();
+        refreshOpenDetailRows();
       }
     });
     assigneeCell.textContent = '';
@@ -1220,8 +1232,13 @@
           row.dataset.priorityId = this.dataset.id || '';
           // Update picker label
           var pInfo = JIRA_PRIORITIES.filter(function (x) { return x.name === val; })[0];
-          picker.innerHTML = (pInfo && pInfo.localIcon ? '<img src="' + pInfo.localIcon + '" class="pri-icon">' : '') +
-                             '<span class="pri-label">' + (val || 'None') + '</span><span class="pri-caret">▾</span>';
+          var iconEl = picker.querySelector('.pri-icon');
+          if (pInfo && pInfo.localIcon) {
+            if (iconEl) { iconEl.src = pInfo.localIcon; }
+            else { var img = document.createElement('img'); img.src = pInfo.localIcon; img.className = 'pri-icon'; picker.insertBefore(img, picker.firstChild); }
+          } else if (iconEl) { iconEl.remove(); }
+          var lbl = picker.querySelector('.pri-label');
+          if (lbl) lbl.textContent = val || 'None';
           // Update cell color class
           priCell.className = PRI_CLASS[val] || 'pri-minor';
           // Update selected state
@@ -1293,6 +1310,7 @@
         pendingEdits[key].sp = newSP;
         cleanPendingEdit(key);
         recalculate();
+        refreshOpenDetailRows();
         renderPendingPanel();
       }
     });
@@ -1658,6 +1676,7 @@
     clearPendingStorage();
     updateCommitVisibility();
     recalculate();
+    refreshOpenDetailRows();
     renderPendingPanel();
     showToast('All pending changes discarded', 'info');
   }
@@ -1896,6 +1915,7 @@
           restorePendingState._done = true;
           restorePendingState();
         }
+        refreshOpenDetailRows();
         var parts = [];
         if (updatedSP)   parts.push(updatedSP   + ' SP updated');
         if (updatedAsgn) parts.push(updatedAsgn + ' assignees updated');

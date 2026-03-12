@@ -145,7 +145,7 @@ Stored in `holidays.json`. Covers Canada + Quebec holidays for **2026**.
 - **Editable SP**: type a new value in the SP column; SP=0 means 4h in Jira timetracking
 - **Editable Assignee**: dropdown restricted to team members
 - **Editable Priority**: custom dropdown with Jira priority icons (Showstopper, Critical, Major, Minor, None)
-- **Person detail view**: click a person's name in the capacity table to expand an inline detail row showing vacation date ranges, PA/PR schedule dates, and committed tasks
+- **Person detail view**: click a person's name in the capacity table to expand an inline detail row showing vacation date ranges, PA/PR schedule dates, and committed tasks. Updates dynamically when tasks are moved, reassigned, SP edited, tasks refreshed from Jira, or changes discarded
 - **Editable Efficiency %**: per-person, recalculates capacity in real time, auto-saved to config
 - **Editable Unscheduled Buffer**: team-level buffer, recalculates net capacity in real time
 - **Draggable backlog sections**: drag backlog headers to reorder; order persists in `backlog-prefs.json`

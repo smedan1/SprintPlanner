@@ -77,7 +77,7 @@ On first launch with no team configured, the Settings modal opens automatically.
 - **Drag tasks** from backlog sections into Sprint Commitment (or back)
 - **Right-click tasks** to move them via a context menu (useful when the destination requires a lot of scrolling)
 - **Edit SP** directly in the table (click the SP cell)
-- **Click a person's name** in the capacity table to expand a detail row showing vacation date ranges, PA/PR schedule dates, and committed tasks
+- **Click a person's name** in the capacity table to expand a detail row showing vacation date ranges, PA/PR schedule dates, and committed tasks (updates dynamically as you make changes)
 - **Edit assignees** via dropdown in each row
 - **Edit priority** via a custom dropdown with Jira priority icons
 - **Edit efficiency %** per person (auto-saved to config)
