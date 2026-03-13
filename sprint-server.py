@@ -237,8 +237,6 @@ def get_issues_for_sprint(sprint_id: int) -> list[dict]:
             if status_name.lower() in ('closed', 'resolved', 'done'):
                 continue
             issue_type = (fields.get('issuetype') or {}).get('name', '')
-            if issue_type.lower() == 'epic':
-                continue
             assignee = fields.get('assignee') or {}
             pri      = fields.get('priority') or {}
             pri_name = _strip_pri_name(pri.get('name', ''))
@@ -371,6 +369,7 @@ _DEFAULT_CONFIG = {
     },
     'confluence_account_ids': {},
     'unscheduled_buffer': 5,
+    'included_types': ['Bug', 'Spike', 'Story', 'Sub-task', 'Task'],
 }
 
 _TEAM_CONFIG_PATH = os.path.join(SCRIPT_DIR, 'team-config.json')
@@ -399,6 +398,7 @@ def save_team_config(cfg: dict) -> None:
     with open(_TEAM_CONFIG_PATH, 'w') as f:
         json.dump(cfg, f, indent=2)
     _team_config_cache = cfg
+
 
 
 def get_board_id() -> int:
@@ -1331,6 +1331,17 @@ class Handler(BaseHTTPRequestHandler):
             self._respond(200, prefs)
             return
 
+        # ── /api/issue-types ── return known issue types
+        if parsed.path == '/api/issue-types':
+            path = os.path.join(SCRIPT_DIR, 'issue-types.json')
+            try:
+                with open(path, 'r') as f:
+                    types = json.load(f)
+            except Exception:
+                types = []
+            self._respond(200, types)
+            return
+
         # ── /icons/* ── serve priority icon files
         if parsed.path.startswith('/icons/'):
             safe = os.path.normpath(parsed.path.lstrip('/'))
@@ -1382,7 +1393,7 @@ class Handler(BaseHTTPRequestHandler):
                 data = json.loads(body)
                 cfg = load_team_config()
                 # Only update allowed fields
-                for key in ('board_id', 'board_url', 'team', 'efficiency', 'confluence_account_ids', 'pa_enabled', 'pa_confluence_url', 'pr_enabled', 'pr_confluence_url', 'pr_duty_weight', 'unscheduled_buffer'):
+                for key in ('board_id', 'board_url', 'team', 'efficiency', 'confluence_account_ids', 'pa_enabled', 'pa_confluence_url', 'pr_enabled', 'pr_confluence_url', 'pr_duty_weight', 'unscheduled_buffer', 'included_types'):
                     if key in data:
                         cfg[key] = data[key]
                 save_team_config(cfg)

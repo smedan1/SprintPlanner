@@ -54,7 +54,8 @@ All team-specific settings are stored in `team-config.json`:
   "pr_enabled": true,
   "pr_confluence_url": "https://autodesk.atlassian.net/wiki/x/fJH5L",
   "pr_duty_weight": 0.5,
-  "confluence_account_ids": {}
+  "confluence_account_ids": {},
+  "included_types": ["Bug", "Spike", "Story", "Sub-task", "Task"]
 }
 ```
 
@@ -139,7 +140,8 @@ Stored in `holidays-ca-qc.json`. Covers Canada + Quebec holidays for **2026**.
 
 **What the page does:**
 - Tasks are loaded dynamically on page open (not baked into the HTML) — the server fetches them from Jira
-- **Closed/resolved/done issues and epics are filtered out** from the task list
+- **Closed/resolved/done issues are filtered out** from the task list
+- **Configurable issue type visibility**: in Settings, choose which issue types to include (default: Bug, Spike, Story, Sub-task, Task). Unchecked types are hidden client-side. Available types are defined in `issue-types.json`
 - **Drag rows** between backlog sections and Sprint Commitment to plan the sprint
 - **Right-click context menu**: right-click a task to move it to any section without dragging
 - **Editable SP**: type a new value in the SP column; SP=0 means 4h in Jira timetracking
@@ -151,7 +153,7 @@ Stored in `holidays-ca-qc.json`. Covers Canada + Quebec holidays for **2026**.
 - **Draggable backlog sections**: drag backlog headers to reorder; order persists in `backlog-prefs.json`
 - **Pending changes persist**: all pending edits and moves survive page reloads (stored in localStorage)
 - **Discard All**: reverts all pending changes, moving tasks back to their original backlogs
-- **Settings gear**: configure board URL, team members, PA toggle, default unscheduled buffer, backlog sprint selection
+- **Settings gear**: configure board URL, team members, PA toggle, default unscheduled buffer, included issue types, backlog sprint selection
 - **↻ Refresh Tasks**: fetches latest SP, assignees, priorities, and any new tasks from Jira
 - **Apply to Jira**: syncs all pending changes (sprint moves, SP edits, assignee edits, priority edits) to Jira
 - **Save**: exports a standalone HTML snapshot of the current sprint plan (header, team capacity, summary, sprint commitment). No JavaScript or server dependencies — priority icons are embedded as data URIs. Filename: `sprint-plan_{sprint-name}.html`. Disabled when sprint commitment is empty.
@@ -190,4 +192,5 @@ Stored in `holidays-ca-qc.json`. Covers Canada + Quebec holidays for **2026**.
 | `pa-schedule.json` | Cached PA schedule for current sprint |
 | `pr-schedule.json` | Cached PR review schedule for current sprint |
 | `backlog-prefs.json` | Saved backlog sprint selections |
+| `issue-types.json` | Static list of known issue types for the board (committed) |
 | `.mcp.json` | MCP server config with Jira token (gitignored) |
