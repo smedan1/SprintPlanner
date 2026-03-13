@@ -106,8 +106,7 @@ All settings are stored in `team-config.json`:
   "pr_confluence_url": "",
   "pr_duty_weight": 0.5,
   "confluence_account_ids": {},
-  "unscheduled_buffer": 5,
-  "included_types": ["Bug", "Spike", "Story", "Sub-task", "Task"]
+  "unscheduled_buffer": 5
 }
 ```
 
@@ -125,7 +124,6 @@ All settings are stored in `team-config.json`:
 | `pr_duty_weight` | Deduction per PR rotation: `0.5` (half day, default) or `1` (full day) |
 | `confluence_account_ids` | Mapping of Confluence account IDs to team member names (for PA parsing) |
 | `unscheduled_buffer` | Default unscheduled buffer in SP (default 5); overridable in the UI per session |
-| `included_types` | Issue types to show in task lists (default: Bug, Spike, Story, Sub-task, Task). Configured via Settings checkboxes; available types defined in `issue-types.json` |
 
 ## Capacity Formula
 
@@ -186,6 +184,6 @@ holidays-ca-qc.json          # Holiday calendar
 absences.json          # Cached absence data (auto-generated)
 pa-schedule.json       # Cached PA schedule (auto-generated)
 pr-schedule.json       # Cached PR review schedule (auto-generated)
-backlog-prefs.json     # Saved backlog selections (auto-generated)
+backlog-prefs.json     # Saved backlog selections, order, and per-section type filters (auto-generated)
 issue-types.json       # Known issue types for the board
 ```

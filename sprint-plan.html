@@ -121,6 +121,16 @@
   /* Source note */
   .source-note { font-size: 11px; color: #97a0af; }
 
+  /* Filter icon & popover */
+  .filter-icon { cursor: pointer; color: #97a0af; padding: 2px 4px; border-radius: 3px; margin-left: 6px; margin-right: auto; position: relative; display: inline-flex; align-items: center; }
+  .filter-icon:hover { background: #ebecf0; color: #5e6c84; }
+  .filter-icon.active { color: #0052cc; }
+  .filter-popover { position: fixed; z-index: 900; background: #fff; border: 1px solid #dfe1e6;
+                     border-radius: 6px; box-shadow: 0 4px 12px rgba(9,30,66,.15); padding: 8px 0; min-width: 180px; font-size: 13px; }
+  .filter-popover label { display: flex; align-items: center; gap: 8px; padding: 5px 14px; cursor: pointer; font-weight: 400; text-transform: none; letter-spacing: 0; color: #172b4d; }
+  .filter-popover label:hover { background: #f4f5f7; }
+  .filter-popover input[type="checkbox"] { margin: 0; }
+
   .section-label { font-size: 11px; text-transform: uppercase; letter-spacing: .5px; color: #97a0af; padding: 10px 20px 4px; }
 
   .total-row td { font-weight: 700; background: #f4f5f7; border-top: 2px solid #ebecf0; }
@@ -482,6 +492,7 @@
   <div class="card" id="sprint-commit-card">
     <div class="card-header">
       <h2 id="sprint-commit-title">Sprint Commitment — Loading…</h2>
+      <span class="filter-icon" data-filter-key="_commit" title="Filter issue types"><svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M1 2h14l-5 6v5l-4 2V8z"/></svg></span>
       <span class="source-note" id="sprint-commit-note">0 issues · 0 SP committed</span>
     </div>
     <div id="sprint-commit-empty" class="empty-state">Drop issues here to commit them to this sprint</div>
@@ -596,13 +607,6 @@
           </div>
         </div>
 
-        <!-- Include Issue Types -->
-        <div style="margin-bottom:24px;">
-          <label style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:#5e6c84;display:block;margin-bottom:6px;">Include Issue Types</label>
-          <div style="font-size:11px;color:#5e6c84;margin-bottom:6px;">Unchecked types are hidden from task lists</div>
-          <div id="settings-filtered-types" style="border:1px solid #dfe1e6;border-radius:3px;padding:8px 12px;min-height:40px;font-size:13px;background:#fafbfc;max-height:140px;overflow-y:auto;">
-          </div>
-        </div>
       </div>
     </div>
 
@@ -951,16 +955,117 @@
     }
   }
 
-  function applyTypeFilter() {
-    var included = (teamConfig.included_types || ['Bug', 'Spike', 'Story', 'Sub-task', 'Task']).map(function(t) { return t.toLowerCase(); });
-    document.querySelectorAll('tr[data-issue-type]').forEach(function(row) {
+  // ── Per-section issue type filtering ──
+  function applySectionFilter(filterKey) {
+    var included = (sectionFilters[filterKey] || DEFAULT_INCLUDED_TYPES).map(function(t) { return t.toLowerCase(); });
+    var tbody;
+    if (filterKey === '_commit') {
+      tbody = document.getElementById('sprint-commit-body');
+    } else {
+      tbody = document.querySelector('tbody.droppable[data-sprint-id="' + filterKey + '"]');
+    }
+    if (!tbody) return;
+    tbody.querySelectorAll('tr[data-issue-type]').forEach(function(row) {
       var t = row.dataset.issueType.toLowerCase();
       row.style.display = included.indexOf(t) !== -1 ? '' : 'none';
+    });
+  }
+
+  function applyTypeFilter() {
+    applySectionFilter('_commit');
+    document.querySelectorAll('#backlog-container .card[data-backlog-id]').forEach(function(card) {
+      applySectionFilter(card.dataset.backlogId);
     });
     recalculate();
     updateCommitVisibility();
     refreshOpenDetailRows();
+    updateFilterIconStates();
   }
+
+  function updateFilterIconStates() {
+    var defaultSorted = DEFAULT_INCLUDED_TYPES.slice().sort().join(',').toLowerCase();
+    document.querySelectorAll('.filter-icon[data-filter-key]').forEach(function(icon) {
+      var key = icon.dataset.filterKey;
+      var current = (sectionFilters[key] || DEFAULT_INCLUDED_TYPES).slice().sort().join(',').toLowerCase();
+      icon.classList.toggle('active', current !== defaultSorted);
+    });
+  }
+
+  function wireFilterIcon(icon) {
+    if (!icon) return;
+    icon.addEventListener('click', function(e) {
+      e.stopPropagation();
+      e.preventDefault();
+      toggleFilterPopover(icon);
+    });
+  }
+
+  function toggleFilterPopover(iconEl) {
+    // Close existing popover on this icon
+    if (iconEl._filterPopover && iconEl._filterPopover.parentNode) {
+      iconEl._filterPopover.remove();
+      iconEl._filterPopover = null;
+      return;
+    }
+    // Close any other open popover
+    document.querySelectorAll('.filter-popover').forEach(function(p) { p.remove(); });
+    document.querySelectorAll('.filter-icon').forEach(function(i) { i._filterPopover = null; });
+
+    var filterKey = iconEl.dataset.filterKey;
+    var included = sectionFilters[filterKey] || DEFAULT_INCLUDED_TYPES;
+    var includedLower = included.map(function(t) { return t.toLowerCase(); });
+
+    var types = cachedIssueTypes || DEFAULT_INCLUDED_TYPES;
+    var pop = document.createElement('div');
+    pop.className = 'filter-popover';
+
+    types.forEach(function(name) {
+      var lbl = document.createElement('label');
+      var cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.value = name;
+      cb.checked = includedLower.indexOf(name.toLowerCase()) !== -1;
+      cb.addEventListener('change', function() {
+        // Collect current checked values
+        var checked = [];
+        pop.querySelectorAll('input[type="checkbox"]').forEach(function(c) {
+          if (c.checked) checked.push(c.value);
+        });
+        sectionFilters[filterKey] = checked;
+        applySectionFilter(filterKey);
+        recalculate();
+        updateCommitVisibility();
+        refreshOpenDetailRows();
+        updateFilterIconStates();
+        saveBacklogPrefs();
+      });
+      lbl.appendChild(cb);
+      lbl.appendChild(document.createTextNode(name));
+      pop.appendChild(lbl);
+    });
+
+    // Position fixed relative to the icon
+    document.body.appendChild(pop);
+    var rect = iconEl.getBoundingClientRect();
+    pop.style.left = rect.left + 'px';
+    // Flip above icon if popover would overflow viewport bottom
+    var popHeight = pop.offsetHeight;
+    if (rect.bottom + 4 + popHeight > window.innerHeight) {
+      pop.style.top = (rect.top - popHeight - 4) + 'px';
+    } else {
+      pop.style.top = (rect.bottom + 4) + 'px';
+    }
+    // Keep reference so we can detect "our" popover on this icon
+    iconEl._filterPopover = pop;
+  }
+
+  // Close filter popover on outside click
+  document.addEventListener('click', function(e) {
+    if (!e.target.closest('.filter-icon') && !e.target.closest('.filter-popover')) {
+      document.querySelectorAll('.filter-popover').forEach(function(p) { p.remove(); });
+      document.querySelectorAll('.filter-icon').forEach(function(i) { i._filterPopover = null; });
+    }
+  });
 
   function buildCapacityRows(team, effMap) {
     var tbody = document.getElementById('capacity-body');
@@ -1000,9 +1105,7 @@
 
     var targetSprintId = parseInt(tbody.dataset.sprintId);
     tbody.appendChild(dragRow);
-    updateCommitVisibility();
-    recalculate();
-    refreshOpenDetailRows();
+    applyTypeFilter();
     var summary = dragRow.querySelectorAll('td')[1].textContent.trim();
     queueMove(dragRow.dataset.key, targetSprintId, dragRow.dataset.sourceSprint, summary);
   }
@@ -1036,6 +1139,9 @@
     emptyState.style.background = '';
     handleDrop(commitBody, e);
   });
+
+  // Wire filter icon on Sprint Commitment header
+  wireFilterIcon(document.querySelector('#sprint-commit-card .filter-icon'));
 
   // ── Drag events ──
   function wireDragEvents(row) {
@@ -1092,9 +1198,7 @@
         var targetTbody = document.querySelector('tbody.droppable[data-sprint-id="' + dest.id + '"]');
         if (targetTbody && row.parentElement !== targetTbody) {
           targetTbody.appendChild(row);
-          updateCommitVisibility();
-          recalculate();
-          refreshOpenDetailRows();
+          applyTypeFilter();
           var summary = row.querySelectorAll('td')[1].textContent.trim();
           queueMove(row.dataset.key, parseInt(dest.id), row.dataset.sourceSprint, summary);
         }
@@ -1353,6 +1457,9 @@
   // ── Backlog management ──
   var allBacklogs = {};      // {id_str: name} from Jira
   var selectedBacklogs = {}; // {id_str: true/false} persisted prefs
+  var cachedIssueTypes = null; // fetched once from /api/issue-types
+  var sectionFilters = {};     // { filterKey: ['Bug','Story',...] }
+  var DEFAULT_INCLUDED_TYPES = ['Bug', 'Spike', 'Story', 'Sub-task', 'Task'];
 
   function wireDropEvents(tbody) {
     tbody.addEventListener('dragover', function (e) {
@@ -1374,6 +1481,7 @@
     card.innerHTML =
       '<div class="card-header" draggable="true">' +
         '<h2>' + name + '</h2>' +
+        '<span class="filter-icon" data-filter-key="' + sprintId + '" title="Filter issue types"><svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M1 2h14l-5 6v5l-4 2V8z"/></svg></span>' +
         '<span class="source-note" id="backlog-note-' + sprintId + '">Loading...</span>' +
       '</div>' +
       '<table><thead><tr>' +
@@ -1386,6 +1494,7 @@
     var tbody = card.querySelector('tbody.droppable');
     wireDropEvents(tbody);
     wireBacklogDrag(card);
+    wireFilterIcon(card.querySelector('.filter-icon'));
     return card;
   }
 
@@ -1493,6 +1602,8 @@
     var cards = document.querySelectorAll('#backlog-container .card[data-backlog-id]');
     prefs.order = [];
     cards.forEach(function(c) { prefs.order.push(c.dataset.backlogId); });
+    // Save per-section type filters
+    prefs.filters = sectionFilters;
     fetch('http://localhost:5000/api/backlog-prefs', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1505,6 +1616,8 @@
     return fetch('http://localhost:5000/api/backlog-prefs')
       .then(function(r) { return r.json(); })
       .then(function(prefs) {
+        // Load per-section type filters
+        sectionFilters = prefs.filters || {};
         var saved = prefs.selected || [];
         // If no prefs saved yet, default to all backlogs selected
         if (saved.length === 0 && Object.keys(allBacklogs).length > 0) {
@@ -1632,8 +1745,7 @@
       }
     });
     savePendingToStorage(); // clean up any orphaned entries
-    updateCommitVisibility();
-    recalculate();
+    applyTypeFilter();
     renderPendingPanel();
   }
 
@@ -1698,9 +1810,7 @@
     pendingMoves = {};
     pendingEdits = {};
     clearPendingStorage();
-    updateCommitVisibility();
-    recalculate();
-    refreshOpenDetailRows();
+    applyTypeFilter();
     renderPendingPanel();
     showToast('All pending changes discarded', 'info');
   }
@@ -1993,30 +2103,6 @@
     document.getElementById(prWeight >= 1 ? 'settings-pr-weight-full' : 'settings-pr-weight-half').checked = true;
     // Buffer default
     document.getElementById('settings-buffer').value = cfg.unscheduled_buffer != null ? cfg.unscheduled_buffer : 5;
-    // Include issue types — checked = included
-    var ftContainer = document.getElementById('settings-filtered-types');
-    var includedLower = (cfg.included_types || ['Bug', 'Spike', 'Story', 'Sub-task', 'Task']).map(function(t) { return t.toLowerCase(); });
-    ftContainer.innerHTML = '<span style="color:#5e6c84;">Loading…</span>';
-    fetch('http://localhost:5000/api/issue-types')
-      .then(function(r) { return r.json(); })
-      .then(function(types) {
-        ftContainer.innerHTML = '';
-        types.forEach(function(name) {
-          var lbl = document.createElement('label');
-          lbl.style.cssText = 'display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:4px;';
-          var cb = document.createElement('input');
-          cb.type = 'checkbox';
-          cb.value = name;
-          cb.checked = includedLower.indexOf(name.toLowerCase()) !== -1;
-          cb.style.margin = '0';
-          lbl.appendChild(cb);
-          lbl.appendChild(document.createTextNode(name));
-          ftContainer.appendChild(lbl);
-        });
-      })
-      .catch(function() {
-        ftContainer.innerHTML = '<span style="color:#de350b;">Failed to load issue types</span>';
-      });
   };
 
   document.getElementById('settings-pa-enabled').addEventListener('change', function() {
@@ -2166,11 +2252,6 @@
     var prDutyWeight = document.getElementById('settings-pr-weight-full').checked ? 1 : 0.5;
     var bufferDefault = parseFloat(document.getElementById('settings-buffer').value);
     if (isNaN(bufferDefault) || bufferDefault < 0) bufferDefault = 5;
-    var includedTypes = [];
-    document.querySelectorAll('#settings-filtered-types input[type="checkbox"]').forEach(function(cb) {
-      if (cb.checked) includedTypes.push(cb.value);
-    });
-
     var cfg = {
       board_id: boardId,
       board_url: url,
@@ -2180,7 +2261,6 @@
       pr_confluence_url: prUrl,
       pr_duty_weight: prDutyWeight,
       unscheduled_buffer: bufferDefault,
-      included_types: includedTypes,
     };
     fetch('http://localhost:5000/api/config', {
       method: 'POST',
@@ -2202,13 +2282,10 @@
         teamConfig.pr_confluence_url = prUrl;
         teamConfig.pr_duty_weight = prDutyWeight;
         teamConfig.unscheduled_buffer = bufferDefault;
-        var filteredChanged = JSON.stringify((teamConfig.included_types || ['Bug', 'Spike', 'Story', 'Sub-task', 'Task']).slice().sort()) !== JSON.stringify(includedTypes.slice().sort());
-        teamConfig.included_types = includedTypes;
         applyPAVisibility();
         applyPRVisibility();
         closeSettings();
         showToast('Settings saved', 'success');
-        if (filteredChanged) { applyTypeFilter(); }
         // If PA was just re-enabled, refresh PA data
         if (paEnabled && paWasOff) {
           showToast('Refreshing PA schedule...', 'info');
@@ -2413,6 +2490,11 @@
               showToast('No team configured - set up your team in Settings', 'info');
             }
           })
+          .catch(function() {});
+        // Fetch issue types for filter popovers
+        fetch('http://localhost:5000/api/issue-types')
+          .then(function(r) { return r.json(); })
+          .then(function(types) { cachedIssueTypes = types; })
           .catch(function() {});
         initSprintInfo().then(function() { refreshTasks(true); });
       }

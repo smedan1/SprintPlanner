@@ -369,7 +369,6 @@ _DEFAULT_CONFIG = {
     },
     'confluence_account_ids': {},
     'unscheduled_buffer': 5,
-    'included_types': ['Bug', 'Spike', 'Story', 'Sub-task', 'Task'],
 }
 
 _TEAM_CONFIG_PATH = os.path.join(SCRIPT_DIR, 'team-config.json')
@@ -1393,7 +1392,7 @@ class Handler(BaseHTTPRequestHandler):
                 data = json.loads(body)
                 cfg = load_team_config()
                 # Only update allowed fields
-                for key in ('board_id', 'board_url', 'team', 'efficiency', 'confluence_account_ids', 'pa_enabled', 'pa_confluence_url', 'pr_enabled', 'pr_confluence_url', 'pr_duty_weight', 'unscheduled_buffer', 'included_types'):
+                for key in ('board_id', 'board_url', 'team', 'efficiency', 'confluence_account_ids', 'pa_enabled', 'pa_confluence_url', 'pr_enabled', 'pr_confluence_url', 'pr_duty_weight', 'unscheduled_buffer'):
                     if key in data:
                         cfg[key] = data[key]
                 save_team_config(cfg)
