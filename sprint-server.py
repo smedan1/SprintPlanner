@@ -1331,6 +1331,27 @@ class Handler(BaseHTTPRequestHandler):
             self._respond(200, prefs)
             return
 
+        # ── /icons/* ── serve priority icon files
+        if parsed.path.startswith('/icons/'):
+            safe = os.path.normpath(parsed.path.lstrip('/'))
+            if safe.startswith('icons' + os.sep) or safe.startswith('icons/'):
+                fpath = os.path.join(SCRIPT_DIR, safe)
+                if os.path.isfile(fpath):
+                    ext = os.path.splitext(fpath)[1].lower()
+                    ctype = {'.svg': 'image/svg+xml', '.png': 'image/png',
+                             '.gif': 'image/gif', '.jpg': 'image/jpeg'}.get(ext, 'application/octet-stream')
+                    with open(fpath, 'rb') as f:
+                        data = f.read()
+                    self.send_response(200)
+                    self.send_header('Content-Type', ctype)
+                    self.send_header('Content-Length', len(data))
+                    self._cors()
+                    self.end_headers()
+                    self.wfile.write(data)
+                    return
+            self._respond(404, {'error': 'Icon not found'})
+            return
+
         if parsed.path != '/api/sp':
             self._respond(404, {'error': 'Not found'})
             return

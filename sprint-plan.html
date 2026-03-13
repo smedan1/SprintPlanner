@@ -282,6 +282,7 @@
   #confirm-dialog .btn-cancel:hover { background:#ebecf0; }
   #confirm-dialog .btn-confirm { background:#de350b; color:#fff; }
   #confirm-dialog .btn-confirm:hover { background:#bf2600; }
+  #save-btn:disabled { opacity: 0.4; cursor: default; }
 </style>
 </head>
 <body>
@@ -364,7 +365,10 @@
       <span id="meta-holidays">🏖 — holidays</span>
     </div>
   </div>
-  <button id="settings-btn" title="Settings" style="background:none;border:none;color:rgba(255,255,255,0.9);font-size:28px;cursor:pointer;padding:6px 10px;border-radius:6px;transition:background .2s;" onmouseenter="this.style.background='rgba(255,255,255,0.15)'" onmouseleave="this.style.background='none'" onclick="openSettings()">&#9881;</button>
+  <div style="display:flex;gap:4px;align-items:center;">
+    <button id="save-btn" title="Save sprint plan as a standalone HTML file for later reference" disabled style="background:none;border:none;color:rgba(255,255,255,0.9);font-size:14px;font-weight:600;cursor:pointer;padding:6px 12px;border-radius:6px;transition:background .2s,opacity .2s;font-family:inherit;" onmouseenter="if(!this.disabled)this.style.background='rgba(255,255,255,0.15)'" onmouseleave="this.style.background='none'" onclick="saveSnapshot()">Save</button>
+    <button id="settings-btn" title="Settings" style="background:none;border:none;color:rgba(255,255,255,0.9);font-size:28px;cursor:pointer;padding:6px 10px;border-radius:6px;transition:background .2s;" onmouseenter="this.style.background='rgba(255,255,255,0.15)'" onmouseleave="this.style.background='none'" onclick="openSettings()">&#9881;</button>
+  </div>
 </div>
 
 <div class="container">
@@ -1742,6 +1746,8 @@
     var empty = document.getElementById('sprint-commit-empty');
     table.style.display = count > 0 ? '' : 'none';
     empty.style.display = count > 0 ? 'none' : '';
+    var saveBtn = document.getElementById('save-btn');
+    if (saveBtn) saveBtn.disabled = count === 0;
   }
 
   // ── Recalculate committed SP + update all live elements ──
@@ -2730,6 +2736,193 @@
 
     poll();
   })();
+
+  /* ═══ SAVE SNAPSHOT ═══ */
+  window.saveSnapshot = function() {
+    // 1. Grab the full <style> block
+    var styles = document.querySelector('style').outerHTML;
+
+    // 2. Clone header — remove buttons
+    var headerClone = document.querySelector('.header').cloneNode(true);
+    var btnWrap = headerClone.querySelector('#save-btn');
+    if (btnWrap) btnWrap.closest('div').remove();
+    // Add saved-on note
+    var meta = headerClone.querySelector('.meta');
+    if (meta) {
+      var saved = document.createElement('span');
+      saved.textContent = '💾 Saved on ' + new Date().toLocaleString();
+      saved.style.cssText = 'opacity:0.8;font-style:italic;';
+      meta.appendChild(saved);
+    }
+
+    // 3. Clone capacity table card (use outerHTML to guarantee all dynamic content is captured)
+    var _capTmp = document.createElement('div');
+    _capTmp.innerHTML = document.querySelector('#capacity-body').closest('.card').outerHTML;
+    var capCard = _capTmp.firstElementChild;
+    // Remove source-note subtitle
+    var srcNote = capCard.querySelector('.source-note');
+    if (srcNote) srcNote.remove();
+    // Replace inputs with static text
+    capCard.querySelectorAll('.deduct-input').forEach(function(inp) {
+      var span = document.createElement('span');
+      span.textContent = inp.value;
+      if (inp.classList.contains('has-value')) {
+        span.style.cssText = 'background:#fff3cd;font-weight:700;padding:1px 4px;border-radius:2px;';
+      }
+      inp.parentNode.replaceChild(span, inp);
+    });
+    capCard.querySelectorAll('.eff-input').forEach(function(inp) {
+      var span = document.createElement('span');
+      span.textContent = inp.value + '%';
+      // Remove trailing '%' text node that follows the input
+      var next = inp.nextSibling;
+      if (next && next.nodeType === 3 && next.textContent.trim() === '%') next.remove();
+      inp.parentNode.replaceChild(span, inp);
+    });
+    // Remove person click handlers
+    capCard.querySelectorAll('.person').forEach(function(td) {
+      td.removeAttribute('onclick');
+      td.style.cursor = 'default';
+    });
+    // Remove any open detail row
+    var detailRow = capCard.querySelector('.detail-row');
+    if (detailRow) detailRow.remove();
+    // Preserve PA/PR column visibility
+    var paHidden = document.querySelector('.pa-col') && document.querySelector('.pa-col').style.display === 'none';
+    var prHidden = document.querySelector('.pr-col') && document.querySelector('.pr-col').style.display === 'none';
+    if (paHidden) capCard.querySelectorAll('.pa-col').forEach(function(el) { el.style.display = 'none'; });
+    if (prHidden) capCard.querySelectorAll('.pr-col').forEach(function(el) { el.style.display = 'none'; });
+
+    // 4. Clone team summary card
+    var summaryCards = document.querySelectorAll('.col-left > .card');
+    var _sumTmp = document.createElement('div');
+    _sumTmp.innerHTML = summaryCards[1].outerHTML;
+    var sumCard = _sumTmp.firstElementChild;
+    // Replace buffer input with static text
+    var bufInput = sumCard.querySelector('#buffer-input');
+    if (bufInput) {
+      var span = document.createElement('div');
+      span.className = 'val';
+      span.textContent = bufInput.value;
+      bufInput.parentNode.replaceChild(span, bufInput);
+    }
+
+    // 5. Clone sprint commitment card (use outerHTML to guarantee all dynamic content is captured)
+    var _tmp = document.createElement('div');
+    _tmp.innerHTML = document.getElementById('sprint-commit-card').outerHTML;
+    var commitCard = _tmp.firstElementChild;
+    // Show the table (it may be hidden if empty)
+    var commitTable = commitCard.querySelector('#sprint-commit-table');
+    if (commitTable) commitTable.style.display = '';
+    // Remove empty-state placeholder
+    var emptyState = commitCard.querySelector('#sprint-commit-empty');
+    if (emptyState) emptyState.remove();
+    // Replace editable SP inputs with text
+    commitCard.querySelectorAll('.sp-edit').forEach(function(inp) {
+      var span = document.createElement('span');
+      span.textContent = inp.value;
+      inp.parentNode.replaceChild(span, inp);
+    });
+    // Replace assignee dropdowns with static text
+    commitCard.querySelectorAll('.assignee-edit').forEach(function(sel) {
+      var span = document.createElement('span');
+      span.textContent = sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].text : '';
+      sel.parentNode.replaceChild(span, sel);
+    });
+    // If no assignee-edit selects were found, assignee is still plain text from data-assignee
+    commitCard.querySelectorAll('tr[data-key]').forEach(function(row) {
+      var tds = row.querySelectorAll('td');
+      if (tds[3] && !tds[3].textContent.trim() && row.dataset.assignee) {
+        tds[3].textContent = row.dataset.assignee;
+      }
+    });
+    // Replace priority pickers with static text + inline icon
+    commitCard.querySelectorAll('.pri-picker').forEach(function(picker) {
+      var cell = picker.parentNode;
+      var iconImg = picker.querySelector('.pri-icon');
+      var label = picker.querySelector('.pri-label');
+      var text = label ? label.textContent : picker.textContent.replace('▾', '').trim();
+      cell.textContent = '';
+      if (iconImg) cell.appendChild(iconImg.cloneNode(true));
+      cell.appendChild(document.createTextNode(text));
+    });
+    // Convert priority icon <img> src to inline data URIs
+    // Build map from LIVE DOM using fully resolved http:// URLs (avoids file:// CORS)
+    var iconDataMap = {};
+    document.querySelectorAll('.pri-icon').forEach(function(img) {
+      var relSrc = img.getAttribute('src');
+      if (!relSrc || iconDataMap[relSrc]) return;
+      try {
+        var xhr = new XMLHttpRequest();
+        xhr.open('GET', 'http://localhost:5000/' + relSrc, false); // always use server URL (avoids file:// CORS)
+        xhr.overrideMimeType('text/plain; charset=x-user-defined');
+        xhr.send();
+        if (xhr.status === 200) {
+          if (relSrc.endsWith('.svg')) {
+            iconDataMap[relSrc] = 'data:image/svg+xml;base64,' + btoa(xhr.responseText);
+          } else {
+            var raw = '';
+            for (var i = 0; i < xhr.responseText.length; i++) {
+              raw += String.fromCharCode(xhr.responseText.charCodeAt(i) & 0xff);
+            }
+            var ext = relSrc.split('.').pop();
+            iconDataMap[relSrc] = 'data:image/' + ext + ';base64,' + btoa(raw);
+          }
+        }
+      } catch(e) {}
+    });
+    // Apply data URIs to cloned images by matching relative src
+    commitCard.querySelectorAll('.pri-icon').forEach(function(img) {
+      var src = img.getAttribute('src');
+      if (iconDataMap[src]) img.src = iconDataMap[src];
+    });
+    // Remove pri-menu dropdowns
+    commitCard.querySelectorAll('.pri-menu').forEach(function(m) { m.remove(); });
+    // Remove draggable
+    commitCard.querySelectorAll('[draggable]').forEach(function(el) {
+      el.removeAttribute('draggable');
+    });
+
+    // 6. Assemble HTML
+    var title = (document.getElementById('page-title').textContent || 'Sprint Plan').replace('Sprint Capacity Plan — ', '');
+    var today = new Date().toISOString().slice(0, 10);
+    var html = '<!DOCTYPE html>\n<html lang="en">\n<head>\n'
+      + '<meta charset="UTF-8">\n'
+      + '<meta name="viewport" content="width=device-width, initial-scale=1.0">\n'
+      + '<title>Sprint Plan — ' + title + ' (saved ' + today + ')</title>\n'
+      + styles + '\n'
+      + '<style>\n'
+      + '  html, body { height: auto; overflow: auto; }\n'
+      + '  .container { display:block; max-width:1200px; margin:0 auto; padding:24px; height:auto; }\n'
+      + '  .col-left, .col-right { overflow:visible; height:auto; padding:0; }\n'
+      + '  .card { margin-bottom:20px; }\n'
+      + '  .person:hover { color:inherit; text-decoration:none; }\n'
+      + '</style>\n'
+      + '</head>\n<body>\n'
+      + headerClone.outerHTML + '\n'
+      + '<div class="container">\n'
+      + '<div class="col-left">\n'
+      + capCard.outerHTML + '\n'
+      + sumCard.outerHTML + '\n'
+      + '</div>\n'
+      + '<div class="col-right">\n'
+      + commitCard.outerHTML + '\n'
+      + '</div>\n'
+      + '</div>\n'
+      + '</body>\n</html>';
+
+    // 7. Trigger download
+    var blob = new Blob([html], { type: 'text/html' });
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    var safeName = title.replace(/[^a-zA-Z0-9-_ ]/g, '').replace(/\s+/g, '-').toLowerCase();
+    a.download = 'sprint-plan_' + safeName + '.html';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(a.href);
+  };
+
 })();
 </script>
 </body>

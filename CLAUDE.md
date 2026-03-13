@@ -154,6 +154,7 @@ Stored in `holidays-ca-qc.json`. Covers Canada + Quebec holidays for **2026**.
 - **Settings gear**: configure board URL, team members, PA toggle, default unscheduled buffer, backlog sprint selection
 - **↻ Refresh Tasks**: fetches latest SP, assignees, priorities, and any new tasks from Jira
 - **Apply to Jira**: syncs all pending changes (sprint moves, SP edits, assignee edits, priority edits) to Jira
+- **Save**: exports a standalone HTML snapshot of the current sprint plan (header, team capacity, summary, sprint commitment). No JavaScript or server dependencies — priority icons are embedded as data URIs. Filename: `sprint-plan_{sprint-name}.html`. Disabled when sprint commitment is empty.
 
 **Jira fields written by Apply to Jira:**
 - Sprint move → `POST /rest/agile/1.0/sprint/{id}/issue`
@@ -162,6 +163,8 @@ Stored in `holidays-ca-qc.json`. Covers Canada + Quebec holidays for **2026**.
 - Priority → `priority.id` or `priority.name`
 
 **Layout:** Left and right columns scroll independently. Sprint Commitment card has a blue left border accent for visibility when scrolled.
+
+**Static file serving:** The server also serves files from the `icons/` directory at `/icons/*` (used by the Save feature to embed priority icons as data URIs).
 
 **Without the server:** drag-and-drop and field edits still work locally; failed syncs queue in a collapsible "Pending Jira Changes" panel. Paste the list to Claude to apply via MCP.
 

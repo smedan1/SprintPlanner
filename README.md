@@ -85,6 +85,7 @@ On first launch with no team configured, the Settings modal opens automatically.
 - **Pending changes persist** across page reloads (stored in localStorage)
 - **Discard All** reverts all pending changes and moves tasks back to their original backlogs
 - Click **Apply to Jira** to sync all changes
+- Click **Save** to export a standalone HTML snapshot for offline reference (no server needed to view)
 
 ## Configuration Reference
 
