@@ -1830,7 +1830,7 @@
       var tbody = card.querySelector('tbody.droppable');
       if (!tbody) return;
       var sid = tbody.dataset.sprintId;
-      var rows = tbody.querySelectorAll('tr:not(.loading-row)');
+      var rows = tbody.querySelectorAll('tr:not(.loading-row):not([style*="display: none"])');
       var issueCount = rows.length;
       var spTotal = 0, unestimated = 0;
       rows.forEach(function(r) {
