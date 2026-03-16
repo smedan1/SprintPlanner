@@ -91,9 +91,12 @@ def check_confluence_auth() -> tuple[bool, str, str, bool]:
 _PRIORITIES_CACHE: list[dict] | None = None
 
 
+_PRI_ALIASES = {'Standard': 'Minor'}
+
 def _strip_pri_name(name: str) -> str:
-    """Strip leading number prefix from Jira priority names (e.g. '3. Major', '1 - Critical')."""
-    return re.sub(r'^\d+[\s.\-]+\s*', '', name)
+    """Strip leading number prefix from Jira priority names and normalize aliases."""
+    stripped = re.sub(r'^\d+[\s.\-]+\s*', '', name)
+    return _PRI_ALIASES.get(stripped, stripped)
 
 
 def _download_priority_icon(icon_url: str, pri_name: str) -> str:
@@ -255,6 +258,58 @@ def get_issues_for_sprint(sprint_id: int) -> list[dict]:
             })
         return result
     except Exception:
+        return []
+
+
+def get_epic_children(epic_key: str) -> list[dict]:
+    """Fetch child issues of an epic from Jira."""
+    jql = f'"Epic Link" = {epic_key} OR parent = {epic_key} ORDER BY priority ASC, created ASC'
+    params = urllib.parse.urlencode({
+        'jql': jql,
+        'fields': 'customfield_10130,assignee,summary,issuetype,status,priority,sprint',
+        'maxResults': 200,
+    })
+    req = urllib.request.Request(
+        f'{JIRA_URL}/rest/api/2/search?{params}',
+        method='GET',
+        headers={'Content-Type': 'application/json', 'Authorization': f'Bearer {JIRA_TOKEN}'}
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            body = json.loads(resp.read().decode('utf-8'))
+        result = []
+        for i in body.get('issues', []):
+            fields = i.get('fields', {})
+            status_name = (fields.get('status') or {}).get('name', '')
+            if status_name.lower() in ('closed', 'resolved', 'done'):
+                continue
+            assignee = fields.get('assignee') or {}
+            pri = fields.get('priority') or {}
+            pri_name = _strip_pri_name(pri.get('name', ''))
+            # Extract sprint info
+            sprints = []
+            sprint_field = fields.get('sprint')
+            if sprint_field and isinstance(sprint_field, dict):
+                sprints.append({
+                    'id': sprint_field.get('id'),
+                    'name': sprint_field.get('name', ''),
+                })
+            result.append({
+                'key':              i['key'],
+                'summary':          fields.get('summary', ''),
+                'sp':               fields.get('customfield_10130'),
+                'assignee_display': assignee.get('displayName') or '',
+                'assignee_name':    assignee.get('name') or '',
+                'type':             (fields.get('issuetype') or {}).get('name', 'Story'),
+                'status':           (fields.get('status')    or {}).get('name', ''),
+                'priority':         pri_name,
+                'priority_id':      pri.get('id', ''),
+                'priority_icon':    pri.get('iconUrl', ''),
+                'sprints':          sprints,
+            })
+        return result
+    except Exception as e:
+        print(f'  x Failed to fetch epic children for {epic_key}: {e}')
         return []
 
 
@@ -1270,6 +1325,18 @@ class Handler(BaseHTTPRequestHandler):
             # Include Jira priorities (fetched + cached on first call)
             priorities = fetch_jira_priorities()
             self._respond(200, {'sprints': issues_by_sprint, 'priorities': priorities})
+            return
+
+        # ── /api/epic-children ──
+        if parsed.path == '/api/epic-children':
+            qs = urllib.parse.parse_qs(parsed.query)
+            key = qs.get('key', [''])[0].strip()
+            if not key:
+                self._respond(400, {'error': 'Missing key parameter'})
+                return
+            children = get_epic_children(key)
+            print(f'  > Epic {key}: {len(children)} children')
+            self._respond(200, {'children': children})
             return
 
         # ── /api/sprint-info ──

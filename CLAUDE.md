@@ -14,7 +14,7 @@ Sprint Capacity (per person) = (Working Days × Efficiency %) - Deductions
 Team Net Capacity (SP) = Sum of individual capacities - Unscheduled buffer
 ```
 
-Defaults: 70% efficiency, 10 working days per sprint. 1 story point = 1 day of work.
+Defaults: 70% efficiency, 10 working days per sprint. 1 story point = 1 day of work. SP=0 is a special value meaning 4h of work (0.5 SP in capacity calculations).
 
 ### Per-person efficiency overrides
 Configured in `team-config.json` under `efficiency`. Examples:
@@ -28,13 +28,14 @@ Efficiency is also editable directly in the capacity table UI and auto-saved to 
 
 ### Deduction definitions
 - **Absence**: vacation, sick days, OOO
-- **Events**: team events that take time away from sprint work
+- **Events**: team events and demos that take time away from sprint work
 - **Hackathon**: company hackathon days
 - **Training**: learning & development time
 - **PA (Promotion Analysis)**: optional; 1-day duty monitoring the staging build for promotion decisions. Enabled/disabled per team in settings.
 - **PR (Pull Request Review)**: optional; cross-team PR review rotation duty. Deduction per rotation is configurable: half day (0.5, default) or full day (1.0) via Settings > PR Duty Weight. Schedule read from Confluence. Enabled/disabled per team in settings.
 - **KTLO**: Keep The Lights On — operational/maintenance work
 - **Unscheduled**: team-level buffer for mid-sprint critical priority unplanned work; default **5 SP per sprint**
+- **Headroom**: Gross Capacity − Committed SP. Includes the unscheduled buffer (i.e. when committed = net available, headroom = buffer). Progress bar fills relative to Net Available; green ≤90%, amber 90–100% or eating into buffer, red when exceeding gross.
 
 ## Configuration
 
@@ -143,7 +144,8 @@ Stored in `holidays-ca-qc.json`. Covers Canada + Quebec holidays for **2026**.
 - **Per-section issue type filter**: each backlog and Sprint Commitment has a funnel icon in the title bar to choose which issue types to show (default: Bug, Spike, Story, Sub-task, Task). Unchecked types are hidden client-side. Available types are defined in `issue-types.json`. Filter settings persist in `backlog-prefs.json` (key `"_commit"` for Sprint Commitment, sprint ID for backlogs)
 - **Drag rows** between backlog sections and Sprint Commitment to plan the sprint
 - **Right-click context menu**: right-click a task to move it to any section without dragging
-- **Editable SP**: type a new value in the SP column; SP=0 means 4h in Jira timetracking
+- **Editable SP**: type a new value in the SP column; SP=0 means 4h in Jira timetracking (counts as 0.5 SP in capacity math)
+- **Epic expansion**: click an epic row to expand it inline and see its child tasks (fetched from Jira via `/api/epic-children`). Children show which sprint they belong to via a pill badge. All children are draggable and have a right-click context menu to move them to any section. Children are read-only (edit from their backlog row). Expanded epics collapse on Refresh Tasks or Discard All. Child rows have a faint purple tint and left border for visual distinction.
 - **Editable Assignee**: dropdown restricted to team members
 - **Editable Priority**: custom dropdown with Jira priority icons (Showstopper, Critical, Major, Minor, None)
 - **Person detail view**: click a person's name in the capacity table to expand an inline detail row showing vacation date ranges, PA/PR schedule dates, and committed tasks. Updates dynamically when tasks are moved, reassigned, SP edited, tasks refreshed from Jira, or changes discarded
@@ -161,7 +163,7 @@ Stored in `holidays-ca-qc.json`. Covers Canada + Quebec holidays for **2026**.
 - Sprint move → `POST /rest/agile/1.0/sprint/{id}/issue`
 - SP → `customfield_10130` + `timetracking.originalEstimate` (1 SP = 1 day); SP=0 → `4h`; remaining estimate = max(0, original − logged)
 - Assignee → resolved via user search (`username` param, Jira Server API)
-- Priority → `priority.id` or `priority.name`
+- Priority → `priority.id` or `priority.name` (server normalizes aliases: "Standard" → "Minor")
 
 **Layout:** Left and right columns scroll independently. Sprint Commitment card has a blue left border accent for visibility when scrolled.
 

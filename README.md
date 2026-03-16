@@ -76,7 +76,8 @@ On first launch with no team configured, the Settings modal opens automatically.
 - The capacity table shows each team member with their working days, deductions, efficiency, and calculated capacity
 - **Drag tasks** from backlog sections into Sprint Commitment (or back)
 - **Right-click tasks** to move them via a context menu (useful when the destination requires a lot of scrolling)
-- **Edit SP** directly in the table (click the SP cell)
+- **Expand epics** by clicking an epic row to see its child tasks inline. Children show their sprint membership as badges, and can be dragged or right-click moved to any section
+- **Edit SP** directly in the table (click the SP cell); SP=0 means 4h of work and counts as 0.5 SP in capacity calculations
 - **Click a person's name** in the capacity table to expand a detail row showing vacation date ranges, PA/PR schedule dates, and committed tasks (updates dynamically as you make changes)
 - **Edit assignees** via dropdown in each row
 - **Edit priority** via a custom dropdown with Jira priority icons
@@ -135,7 +136,9 @@ Team Net Capacity = Sum of person capacities - Unscheduled buffer
 - **Working Days**: Mon-Fri in the sprint window (typically 10 for a 2-week sprint), minus holidays
 - **Efficiency %**: what fraction of available time goes to sprint work (default 70%)
 - **Deductions**: subtracted after efficiency is applied (1 day of vacation = 1 full day deducted)
+- **SP=0**: special value meaning 4h of work; counts as 0.5 SP in capacity math (display still shows "0")
 - **Unscheduled buffer**: team-level reserve for unplanned work (default 5 SP)
+- **Headroom**: Gross Capacity minus Committed SP — shows how much total capacity remains uncommitted, including the unscheduled buffer. The progress bar fills relative to Net Available; green up to 90%, amber 90–100%, amber when eating into buffer, red when exceeding gross.
 
 ## Holidays
 

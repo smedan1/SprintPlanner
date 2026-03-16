@@ -131,6 +131,21 @@
   .filter-popover label:hover { background: #f4f5f7; }
   .filter-popover input[type="checkbox"] { margin: 0; }
 
+  /* Epic expand/collapse */
+  tr.epic-expandable { cursor: pointer; }
+  tr.epic-expandable:hover td { background: #f0f4ff !important; }
+  tr.epic-expandable td:first-child { padding-left: 30px !important; }
+  .epic-expand-icon { position: absolute; left: 16px; top: 50%; transform: translateY(-50%); font-size: 10px; color: #97a0af; transition: transform .15s; }
+  tr.epic-expanded .epic-expand-icon { transform: translateY(-50%) rotate(90deg); }
+  tr.epic-child-row td { background: #f8f7ff; border-bottom: 1px solid #f0f1f3; }
+  tr.epic-child-row:hover td { background: #eee8ff !important; }
+  tr.epic-child-row td:first-child { padding-left: 32px; border-left: 3px solid #eae6ff; }
+  tr.epic-child-row.not-in-backlog { cursor: grab; }
+  tr.epic-child-row.not-in-backlog td:first-child { padding-left: 40px; position: relative; }
+  tr.epic-child-row.not-in-backlog td:first-child::before { content: '⠿'; color: #c1c7d0; font-size: 11px; position: absolute; left: 22px; top: 50%; transform: translateY(-50%); }
+  .backlog-indicator { display: inline-block; padding: 1px 6px; border-radius: 3px; font-size: 10px; font-weight: 600; background: #deebff; color: #0747a6; margin-left: 6px; white-space: nowrap; vertical-align: middle; }
+  .epic-loading-row td { color: #97a0af; font-style: italic; padding-left: 32px !important; }
+
   .section-label { font-size: 11px; text-transform: uppercase; letter-spacing: .5px; color: #97a0af; padding: 10px 20px 4px; }
 
   .total-row td { font-weight: 700; background: #f4f5f7; border-top: 2px solid #ebecf0; }
@@ -398,7 +413,7 @@
           <th class="num pa-col" id="pa-col-header"><a id="pa-col-link" href="" target="_blank" title="Promotion Analysis duty — 1 day per rotation — Click to open in Confluence" style="color:inherit;text-decoration:none;border-bottom:1px dashed rgba(0,0,0,0.3);">PA</a></th>
           <th class="num pr-col" id="pr-col-header"><a id="pr-col-link" href="" target="_blank" title="Cross-team PR review duty — 0.5 days per rotation — Click to open in Confluence" style="color:inherit;text-decoration:none;border-bottom:1px dashed rgba(0,0,0,0.3);">PR</a></th>
           <th class="num" title="Keep The Lights On — operational/maintenance work">KTLO</th>
-          <th class="num" title="Team events that take time away from sprint work">Events</th>
+          <th class="num" title="Team events and demos that take time away from sprint work">Events</th>
           <th class="num" title="Company hackathon days">Hack.</th>
           <th class="num" title="Learning & development time">Training</th>
           <th class="num" title="Working days minus all deductions">Avail</th>
@@ -845,10 +860,11 @@
     // Committed tasks from sprint commitment body
     var tasks = [];
     var totalSP = 0;
-    document.querySelectorAll('#sprint-commit-body tr').forEach(function(tr) {
+    document.querySelectorAll('#sprint-commit-body tr:not(.epic-child-row)').forEach(function(tr) {
       if (tr.dataset.assignee === name) {
-        var sp = parseFloat(tr.dataset.sp) || 0;
-        tasks.push({ key: tr.dataset.key, summary: tr.querySelectorAll('td')[1].textContent, sp: sp });
+        var sp = effectiveSP(tr.dataset.sp, tr.dataset.sp);
+        var displaySP = tr.dataset.sp !== '' ? parseFloat(tr.dataset.sp) : null;
+        tasks.push({ key: tr.dataset.key, summary: tr.querySelectorAll('td')[1].textContent, sp: displaySP });
         totalSP += sp;
       }
     });
@@ -897,7 +913,7 @@
       tasks.forEach(function(t) {
         html += '<tr><td><a href="https://jira.autodesk.com/browse/' + t.key + '" target="_blank">' + t.key + '</a></td>';
         html += '<td>' + t.summary + '</td>';
-        html += '<td>' + (t.sp > 0 ? t.sp.toFixed(1) : '\u2014') + '</td></tr>';
+        html += '<td>' + (t.sp != null ? t.sp.toFixed(1) : '\u2014') + '</td></tr>';
       });
       html += '</tbody><tfoot><tr><td colspan="2" style="text-align:right;font-weight:600">Total</td>';
       html += '<td style="font-weight:600">' + totalSP.toFixed(1) + ' SP</td></tr></tfoot></table>';
@@ -965,9 +981,20 @@
       tbody = document.querySelector('tbody.droppable[data-sprint-id="' + filterKey + '"]');
     }
     if (!tbody) return;
-    tbody.querySelectorAll('tr[data-issue-type]').forEach(function(row) {
+    tbody.querySelectorAll('tr[data-issue-type]:not(.epic-child-row)').forEach(function(row) {
       var t = row.dataset.issueType.toLowerCase();
-      row.style.display = included.indexOf(t) !== -1 ? '' : 'none';
+      var visible = included.indexOf(t) !== -1;
+      row.style.display = visible ? '' : 'none';
+      // If an epic is hidden, collapse its children
+      if (!visible && row.classList.contains('epic-expanded')) {
+        row.classList.remove('epic-expanded');
+        var next = row.nextElementSibling;
+        while (next && next.classList.contains('epic-child-row')) {
+          var toRemove = next;
+          next = next.nextElementSibling;
+          toRemove.remove();
+        }
+      }
     });
   }
 
@@ -1103,6 +1130,13 @@
     if (!dragRow) return;
     if (dragRow.parentElement === tbody) return;
 
+    // Epic child row: create a normal row in target instead of moving
+    if (dragRow.classList.contains('epic-child-row')) {
+      moveEpicChildToBacklog(dragRow, tbody.dataset.sprintId);
+      dragRow = null;
+      return;
+    }
+
     var targetSprintId = parseInt(tbody.dataset.sprintId);
     tbody.appendChild(dragRow);
     applyTypeFilter();
@@ -1167,6 +1201,9 @@
   function closeMoveMenu() {
     if (activeCtxMenu) { activeCtxMenu.remove(); activeCtxMenu = null; }
   }
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') closeMoveMenu();
+  });
   function showMoveMenu(row, x, y) {
     closeMoveMenu();
     var currentSprintId = row.parentElement.dataset.sprintId;
@@ -1220,6 +1257,13 @@
   }
 
   // ── Issue row helpers ──
+  // SP=0 means 4h of work (half a day = 0.5 SP). Use this for capacity math.
+  function effectiveSP(rawSP, datasetSp) {
+    if (datasetSp === '' || datasetSp == null) return 0; // unestimated
+    var v = parseFloat(rawSP) || 0;
+    return v === 0 ? 0.5 : v;
+  }
+
   function escHtml(s) {
     return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   }
@@ -1256,15 +1300,261 @@
     tr.dataset.priorityId   = issue.priority_id || '';
     tr.dataset.issueType    = issue.type || '';
     tr.dataset.sourceSprint = String(issue.sprint_id);
+    var isEpic = (issue.type || '').toLowerCase() === 'epic';
+    var expandIcon = isEpic ? '<span class="epic-expand-icon">&#9654;</span>' : '';
     tr.innerHTML =
-      '<td><a href="https://jira.autodesk.com/browse/' + issue.key + '" target="_blank">' + issue.key + '</a></td>' +
+      '<td>' + expandIcon + '<a href="https://jira.autodesk.com/browse/' + issue.key + '" target="_blank">' + issue.key + '</a></td>' +
       '<td>' + escHtml(issue.summary) + '</td>' +
       '<td><span class="badge badge-' + type + '">' + escHtml(issue.type) + '</span></td>' +
       '<td>' + escHtml(asgn) + '</td>' +
-      '<td class="num">' + (sp > 0 ? sp : '—') + '</td>' +
+      '<td class="num">' + (issue.sp != null ? sp : '—') + '</td>' +
       '<td class="' + pri + '">' + priIconHtml(issue) + escHtml(issue.priority) + '</td>' +
       '<td><span class="badge badge-' + stat + '">' + escHtml(issue.status) + '</span></td>';
+    if (isEpic) {
+      tr.classList.add('epic-expandable');
+      tr.addEventListener('click', function(e) {
+        if (e.target.closest('a')) return; // don't intercept link clicks
+        toggleEpicExpand(tr);
+      });
+    }
     return tr;
+  }
+
+  // ── Epic expand/collapse ──
+
+  function collapseAllEpics() {
+    document.querySelectorAll('tr.epic-expanded').forEach(function(row) {
+      row.classList.remove('epic-expanded');
+    });
+    document.querySelectorAll('tr.epic-child-row, tr.epic-loading-row').forEach(function(r) { r.remove(); });
+  }
+
+  function toggleEpicExpand(epicRow) {
+    var key = epicRow.dataset.key;
+    var isExpanded = epicRow.classList.contains('epic-expanded');
+
+    if (isExpanded) {
+      // Collapse: remove child rows
+      epicRow.classList.remove('epic-expanded');
+      var next = epicRow.nextElementSibling;
+      while (next && (next.classList.contains('epic-child-row') || next.classList.contains('epic-loading-row'))) {
+        var toRemove = next;
+        next = next.nextElementSibling;
+        toRemove.remove();
+      }
+      return;
+    }
+
+    // Expand: show loading, fetch children
+    epicRow.classList.add('epic-expanded');
+    var loadingRow = document.createElement('tr');
+    loadingRow.className = 'epic-loading-row';
+    loadingRow.innerHTML = '<td colspan="7">Loading children…</td>';
+    epicRow.after(loadingRow);
+
+    fetch('http://localhost:5000/api/epic-children?key=' + encodeURIComponent(key))
+      .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      .then(function(data) {
+        loadingRow.remove();
+        var children = data.children || [];
+        if (children.length === 0) {
+          var emptyRow = document.createElement('tr');
+          emptyRow.className = 'epic-child-row';
+          emptyRow.dataset.epicParent = key;
+          emptyRow.innerHTML = '<td colspan="7" style="color:#97a0af;font-style:italic;padding-left:32px;">No child issues</td>';
+          epicRow.after(emptyRow);
+          return;
+        }
+        // Insert in reverse so they end up in correct order after the epic row
+        for (var i = children.length - 1; i >= 0; i--) {
+          var childRow = buildEpicChildRow(children[i], key);
+          epicRow.after(childRow);
+        }
+      })
+      .catch(function(err) {
+        loadingRow.remove();
+        epicRow.classList.remove('epic-expanded');
+        showToast('Cannot fetch epic children — ' + err.message, 'error');
+      });
+  }
+
+  function buildEpicChildRow(child, epicKey) {
+    var sp = child.sp != null ? parseFloat(child.sp) : 0;
+    var type = TYPE_BADGE[child.type] || 'story';
+    var stat = STATUS_BADGE[child.status] || 'todo';
+    var pri = PRI_CLASS[child.priority] || 'pri-minor';
+    var tr = document.createElement('tr');
+    tr.className = 'epic-child-row';
+    tr.dataset.epicParent = epicKey;
+    tr.dataset.key = child.key;
+    tr.dataset.sp = child.sp != null ? sp : '';
+    tr.dataset.assignee = child.assignee_display || '';
+    tr.dataset.assigneeKey = child.assignee_name || '';
+    tr.dataset.priority = child.priority || '';
+    tr.dataset.priorityId = child.priority_id || '';
+    tr.dataset.issueType = child.type || '';
+
+    // Determine if child is in a backlog/sprint
+    var sprintBadges = '';
+    var inBacklog = false;
+    var childSprints = child.sprints || [];
+
+    // Check server-reported sprints
+    for (var s = 0; s < childSprints.length; s++) {
+      var sName = childSprints[s].name || 'Sprint ' + childSprints[s].id;
+      sprintBadges += '<span class="backlog-indicator">' + escHtml(sName) + '</span>';
+      inBacklog = true;
+    }
+
+    // Also check if child exists as a normal row in the DOM (pending move from this session)
+    if (!inBacklog) {
+      var existingRow = document.querySelector('tr[data-key="' + child.key + '"]:not(.epic-child-row)');
+      if (existingRow) {
+        var parentTbody = existingRow.closest('tbody.droppable');
+        if (parentTbody) {
+          var sectionId = parentTbody.dataset.sprintId;
+          var sectionName = SPRINT_NAMES[parseInt(sectionId)] || 'Backlog';
+          sprintBadges = '<span class="backlog-indicator">' + escHtml(sectionName) + '</span>';
+          inBacklog = true;
+        }
+      }
+    }
+
+    tr.innerHTML =
+      '<td><a href="https://jira.autodesk.com/browse/' + child.key + '" target="_blank">' + child.key + '</a>' + sprintBadges + '</td>' +
+      '<td>' + escHtml(child.summary) + '</td>' +
+      '<td><span class="badge badge-' + type + '">' + escHtml(child.type) + '</span></td>' +
+      '<td>' + escHtml(child.assignee_display || '') + '</td>' +
+      '<td class="num">' + (child.sp != null ? sp : '—') + '</td>' +
+      '<td class="' + pri + '">' + priIconHtml(child) + escHtml(child.priority) + '</td>' +
+      '<td><span class="badge badge-' + stat + '">' + escHtml(child.status) + '</span></td>';
+
+    // Store source sprint for move tracking
+    var sourceSprintId = (childSprints.length > 0 && childSprints[0].id) ? String(childSprints[0].id) : '0';
+    tr.dataset.sourceSprint = sourceSprintId;
+
+    // Always allow dragging epic children
+    if (!inBacklog) tr.classList.add('not-in-backlog');
+    tr.draggable = true;
+    tr.addEventListener('dragstart', function(e) {
+      dragRow = tr;
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', child.key);
+      setTimeout(function() { tr.classList.add('dragging'); }, 0);
+    });
+    tr.addEventListener('dragend', function() {
+      tr.classList.remove('dragging');
+      dragRow = null;
+    });
+    // Always wire right-click context menu
+    tr.addEventListener('contextmenu', function(e) {
+      e.preventDefault();
+      showMoveMenuForEpicChild(tr, e.clientX, e.clientY);
+    });
+
+    return tr;
+  }
+
+  function showMoveMenuForEpicChild(row, x, y) {
+    closeMoveMenu();
+    var menu = document.createElement('div');
+    menu.className = 'ctx-menu';
+    var header = document.createElement('div');
+    header.className = 'ctx-menu-header';
+    header.textContent = 'Move to';
+    menu.appendChild(header);
+
+    var sourceSprint = row.dataset.sourceSprint || '0';
+    var destinations = [];
+    // Sprint Commitment (exclude if child is already there)
+    var commitId = document.getElementById('sprint-commit-body').dataset.sprintId;
+    if (commitId && commitId !== sourceSprint) destinations.push({ id: commitId, name: sprintName(parseInt(commitId)) + ' (Commitment)' });
+    // Backlogs in DOM order (exclude child's current sprint)
+    document.querySelectorAll('#backlog-container .card[data-backlog-id]').forEach(function(card) {
+      var id = card.dataset.backlogId;
+      if (id !== sourceSprint) destinations.push({ id: id, name: sprintName(parseInt(id)) });
+    });
+
+    destinations.forEach(function(dest) {
+      var item = document.createElement('div');
+      item.className = 'ctx-menu-item';
+      item.textContent = dest.name;
+      item.addEventListener('click', function() {
+        moveEpicChildToBacklog(row, dest.id);
+        closeMoveMenu();
+      });
+      menu.appendChild(item);
+    });
+
+    menu.style.left = x + 'px';
+    menu.style.top = y + 'px';
+    document.body.appendChild(menu);
+    // Reposition if off-screen
+    var rect = menu.getBoundingClientRect();
+    if (rect.right > window.innerWidth) menu.style.left = (window.innerWidth - rect.width - 8) + 'px';
+    if (rect.bottom > window.innerHeight) menu.style.top = (window.innerHeight - rect.height - 8) + 'px';
+    activeCtxMenu = menu;
+    setTimeout(function() {
+      document.addEventListener('click', closeMoveMenu, { once: true });
+    }, 0);
+  }
+
+  function moveEpicChildToBacklog(epicChildRow, targetSprintId) {
+    var targetTbody = document.querySelector('tbody.droppable[data-sprint-id="' + targetSprintId + '"]');
+    if (!targetTbody) return;
+
+    var childKey = epicChildRow.dataset.key;
+
+    // Build a proper issue object for building a normal row
+    var issue = {
+      key: childKey,
+      summary: epicChildRow.querySelectorAll('td')[1].textContent.trim(),
+      sp: epicChildRow.dataset.sp !== '' ? parseFloat(epicChildRow.dataset.sp) : null,
+      assignee_display: epicChildRow.dataset.assignee || '',
+      assignee_name: epicChildRow.dataset.assigneeKey || '',
+      type: epicChildRow.dataset.issueType || '',
+      status: epicChildRow.querySelectorAll('td')[6].textContent.trim(),
+      priority: epicChildRow.dataset.priority || '',
+      priority_id: epicChildRow.dataset.priorityId || '',
+      priority_icon: '',
+      sprint_id: parseInt(targetSprintId),
+    };
+
+    // Create a normal editable row in the target backlog
+    var newRow = buildIssueRow(issue);
+    newRow.dataset.sourceSprint = '0'; // from epic expansion, no original sprint
+    targetTbody.appendChild(newRow);
+    makeIssueRowEditable(newRow);
+    wireDragEvents(newRow);
+
+    // Queue the move (include issue data for restore on reload)
+    var truncSummary = issue.summary && issue.summary.length > 48 ? issue.summary.slice(0, 47) + '…' : (issue.summary || '');
+    var src = sprintName(0);
+    var dest = sprintName(parseInt(targetSprintId));
+    var label = childKey + ' · ' + truncSummary + ' · ' + src + ' → ' + dest;
+    pendingMoves[childKey] = {
+      issueKey: childKey,
+      targetSprintId: parseInt(targetSprintId),
+      originalSprintId: 0,
+      label: label,
+      issueData: issue
+    };
+    savePendingToStorage();
+    renderPendingPanel();
+
+    // Update the epic child row to show the backlog indicator
+    var sectionName = sprintName(parseInt(targetSprintId));
+    epicChildRow.classList.remove('not-in-backlog');
+    epicChildRow.draggable = false;
+    // Update first cell to add backlog indicator
+    var firstTd = epicChildRow.querySelector('td');
+    var indicator = document.createElement('span');
+    indicator.className = 'backlog-indicator';
+    indicator.textContent = sectionName;
+    firstTd.appendChild(indicator);
+
+    recalculate();
+    updateCommitVisibility();
   }
 
   // Remove a pending edit field if reverted to original; delete the key if all fields are clean.
@@ -1423,7 +1713,7 @@
     spInput.className   = 'sp-edit';
     spInput.min         = '0';
     spInput.step        = '0.5';
-    spInput.value       = spVal > 0 ? spVal : '';
+    spInput.value       = row.dataset.sp !== '' ? spVal : '';
     spInput.placeholder = '—';
     spInput.draggable   = false;
     spInput.addEventListener('mousedown', function (e) { e.stopPropagation(); });
@@ -1452,7 +1742,7 @@
 
   // ── Sprint name lookup ──
   var SPRINT_NAMES = {};
-  function sprintName(id) { return SPRINT_NAMES[id] || 'Sprint ' + id; }
+  function sprintName(id) { return SPRINT_NAMES[id] || (id === 0 ? 'Unassigned' : 'Sprint ' + id); }
 
   // ── Backlog management ──
   var allBacklogs = {};      // {id_str: name} from Jira
@@ -1709,10 +1999,19 @@
     Object.keys(pendingMoves).forEach(function(key) {
       var m = pendingMoves[key];
       var row = document.querySelector('tr[data-key="' + m.issueKey + '"]');
-      if (!row) { delete pendingMoves[key]; return; }
       var targetTbody = document.querySelector('tbody.droppable[data-sprint-id="' + m.targetSprintId + '"]');
       if (!targetTbody) { delete pendingMoves[key]; return; }
-      if (row.parentElement !== targetTbody) targetTbody.appendChild(row);
+      if (!row && m.issueData) {
+        // Row from epic child move — recreate it
+        row = buildIssueRow(m.issueData);
+        targetTbody.appendChild(row);
+        makeIssueRowEditable(row);
+        wireDragEvents(row);
+      } else if (!row) {
+        delete pendingMoves[key]; return;
+      } else if (row.parentElement !== targetTbody) {
+        targetTbody.appendChild(row);
+      }
     });
     // Re-apply edits: update row dataset + visible cell values
     Object.keys(pendingEdits).forEach(function(k) {
@@ -1722,7 +2021,7 @@
       if ('sp' in edit) {
         row.dataset.sp = edit.sp != null ? edit.sp : '';
         var spInput = row.querySelector('.sp-edit');
-        if (spInput) spInput.value = edit.sp != null && edit.sp > 0 ? edit.sp : '';
+        if (spInput) spInput.value = edit.sp != null ? edit.sp : '';
       }
       if ('assignee' in edit) {
         row.dataset.assignee = edit.assignee || '';
@@ -1769,12 +2068,18 @@
     showConfirm('Discard all pending changes?', 'This cannot be undone.', 'Discard', doDiscardAll);
   };
   function doDiscardAll() {
-    // Revert moves: move rows back to original tbody
+    collapseAllEpics();
+    // Revert moves: move rows back to original tbody (or remove if from epic expansion)
     Object.values(pendingMoves).forEach(function(m) {
-      var row = document.querySelector('tr[data-key="' + m.issueKey + '"]');
+      var row = document.querySelector('tr[data-key="' + m.issueKey + '"]:not(.epic-child-row)');
       if (!row) return;
       var origTbody = document.querySelector('tbody.droppable[data-sprint-id="' + m.originalSprintId + '"]');
-      if (origTbody && row.parentElement !== origTbody) origTbody.appendChild(row);
+      if (origTbody && row.parentElement !== origTbody) {
+        origTbody.appendChild(row);
+      } else if (!origTbody) {
+        // Row was added from epic expansion with no original backlog — remove it
+        row.remove();
+      }
     });
     // Revert edits: restore orig values
     Object.keys(pendingEdits).forEach(function(k) {
@@ -1871,7 +2176,7 @@
 
   // ── Toggle sprint commit table / empty state ──
   function updateCommitVisibility() {
-    var count = commitBody.querySelectorAll('tr:not([style*="display: none"])').length;
+    var count = commitBody.querySelectorAll('tr:not([style*="display: none"]):not(.epic-child-row):not(.epic-loading-row)').length;
     var table = document.getElementById('sprint-commit-table');
     var empty = document.getElementById('sprint-commit-empty');
     table.style.display = count > 0 ? '' : 'none';
@@ -1885,9 +2190,9 @@
     var totalCommitted = 0;
     var committedByPerson = {};
 
-    commitBody.querySelectorAll('tr').forEach(function (row) {
+    commitBody.querySelectorAll('tr:not(.epic-child-row):not(.epic-loading-row)').forEach(function (row) {
       if (row.style.display === 'none') return;
-      var sp = parseFloat(row.dataset.sp) || 0;
+      var sp = effectiveSP(row.dataset.sp, row.dataset.sp);
       totalCommitted += sp;
       var assignee = row.dataset.assignee;
       if (assignee) {
@@ -1895,7 +2200,7 @@
       }
     });
 
-    var count = commitBody.querySelectorAll('tr:not([style*="display: none"])').length;
+    var count = commitBody.querySelectorAll('tr:not([style*="display: none"]):not(.epic-child-row):not(.epic-loading-row)').length;
 
     document.getElementById('sprint-commit-note').textContent =
       'Sprint ID ' + SPRINT_ID + ' · ' + count + ' issues · ' + totalCommitted.toFixed(1) + ' SP committed';
@@ -1903,19 +2208,20 @@
     document.getElementById('stat-net').textContent = NET_AVAILABLE.toFixed(1);
     document.getElementById('stat-committed').textContent = totalCommitted.toFixed(1);
     var commitBox = document.getElementById('stat-committed-box');
-    commitBox.className = 'stat' + (totalCommitted > NET_AVAILABLE ? ' danger' : totalCommitted > 0 ? ' highlight' : '');
+    commitBox.className = 'stat' + (totalCommitted > GROSS_CAPACITY ? ' danger' : totalCommitted > NET_AVAILABLE ? ' warn' : totalCommitted > 0 ? ' highlight' : '');
 
-    var headroom = NET_AVAILABLE - totalCommitted;
-    var color = headroom < 0 ? '#bf2600' : '#006644';
+    var bufferVal = parseFloat(bufferInput.value) || 0;
+    var headroom = GROSS_CAPACITY - totalCommitted;
+    var color = headroom < 0 ? '#bf2600' : headroom <= bufferVal ? '#ff8b00' : '#006644';
     document.getElementById('headroom-text').innerHTML =
       'Headroom: <strong style="color:' + color + ';">' +
       (headroom >= 0 ? '+' : '') + headroom.toFixed(1) + ' SP</strong>' +
-      ' &nbsp;·&nbsp; ' + totalCommitted.toFixed(1) + ' committed of ' + NET_AVAILABLE + ' available';
+      ' &nbsp;·&nbsp; ' + totalCommitted.toFixed(1) + ' committed of ' + GROSS_CAPACITY.toFixed(1) + ' gross';
 
     var pct = NET_AVAILABLE > 0 ? Math.min(100, (totalCommitted / NET_AVAILABLE) * 100) : 0;
     var fill = document.getElementById('headroom-fill');
     fill.style.width = pct + '%';
-    fill.style.background = totalCommitted > NET_AVAILABLE ? '#bf2600' : pct > 80 ? '#ff8b00' : '#0052cc';
+    fill.style.background = totalCommitted > GROSS_CAPACITY ? '#bf2600' : totalCommitted > NET_AVAILABLE ? '#ff8b00' : pct > 90 ? '#ff8b00' : '#006644';
 
     document.getElementById('headroom-left').textContent = totalCommitted.toFixed(1) + ' committed';
     document.getElementById('headroom-right').textContent = NET_AVAILABLE.toFixed(1) + ' SP available';
@@ -1940,13 +2246,12 @@
       var tbody = card.querySelector('tbody.droppable');
       if (!tbody) return;
       var sid = tbody.dataset.sprintId;
-      var rows = tbody.querySelectorAll('tr:not(.loading-row):not([style*="display: none"])');
+      var rows = tbody.querySelectorAll('tr:not(.loading-row):not(.epic-child-row):not(.epic-loading-row):not([style*="display: none"])');
       var issueCount = rows.length;
       var spTotal = 0, unestimated = 0;
       rows.forEach(function(r) {
-        var sp = parseFloat(r.dataset.sp) || 0;
-        if (sp > 0) spTotal += sp;
-        else unestimated++;
+        if (r.dataset.sp === '' || r.dataset.sp == null) { unestimated++; return; }
+        spTotal += effectiveSP(r.dataset.sp, r.dataset.sp);
       });
       var note = card.querySelector('.source-note');
       if (note) {
@@ -1958,6 +2263,7 @@
 
   // ── Refresh tasks from Jira (SP + assignee + new tasks) ──
   window.refreshTasks = function (silent) {
+    collapseAllEpics();
     var btns = [document.getElementById('refresh-btn')];
     btns.forEach(function (b) { if (b) { b.disabled = true; b.textContent = '↻ Loading…'; } });
     if (!silent) showToast('⏳ Fetching tasks from Jira…', 'info');
@@ -1995,10 +2301,10 @@
               var newSP = issue.sp != null ? parseFloat(issue.sp) : 0;
               var oldSP = parseFloat(row.dataset.sp) || 0;
               if (newSP !== oldSP) {
-                row.dataset.sp     = newSP;
-                row.dataset.origSp = newSP !== 0 ? String(newSP) : '';
+                row.dataset.sp     = issue.sp != null ? newSP : '';
+                row.dataset.origSp = issue.sp != null ? String(newSP) : '';
                 var spInput = row.querySelector('.sp-edit');
-                if (spInput) spInput.value = newSP > 0 ? newSP : '';
+                if (spInput) spInput.value = issue.sp != null ? newSP : '';
                 flashCell(row.querySelectorAll('td')[4]);
                 updatedSP++;
               }
