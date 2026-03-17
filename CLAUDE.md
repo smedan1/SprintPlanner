@@ -27,7 +27,7 @@ Efficiency is also editable directly in the capacity table UI and auto-saved to 
 **Never assume the weekday of a date.** Always compute it (e.g., `python -c "from datetime import date; print(date(YYYY,M,D).strftime('%A'))"`). Sprints start on Tuesdays.
 
 ### Deduction definitions
-- **Absence**: vacation, sick days, OOO
+- **Absence**: personal absences — vacation, sick days, OOO (holidays are separate and reduce working days)
 - **Events**: team events and demos that take time away from sprint work
 - **Hackathon**: company hackathon days
 - **Training**: learning & development time
@@ -145,18 +145,20 @@ Stored in `holidays-ca-qc.json`. Covers Canada + Quebec holidays for **2026**.
 - **Drag rows** between backlog sections and Sprint Commitment to plan the sprint
 - **Right-click context menu**: right-click a task to move it to any section without dragging
 - **Editable SP**: type a new value in the SP column; SP=0 means 4h in Jira timetracking (counts as 0.5 SP in capacity math)
-- **Epic expansion**: click an epic row to expand it inline and see its child tasks (fetched from Jira via `/api/epic-children`). Children show which sprint they belong to via a pill badge. All children are draggable and have a right-click context menu to move them to any section. Children are read-only (edit from their backlog row). Expanded epics collapse on Refresh Tasks or Discard All. Child rows have a faint purple tint and left border for visual distinction.
+- **Epic expansion**: click an epic row to expand it inline and see its child tasks (fetched from Jira via `/api/epic-children`). Children show which sprint they belong to via a pill badge. All children are draggable and have a right-click context menu to move them to any section. Children are read-only (edit from their backlog row). Expanded epics collapse on page reload or Discard All. Child rows have a faint purple tint and left border for visual distinction.
 - **Editable Assignee**: dropdown restricted to team members
 - **Editable Priority**: custom dropdown with Jira priority icons (Showstopper, Critical, Major, Minor, None)
 - **Person detail view**: click a person's name in the capacity table to expand an inline detail row showing vacation date ranges, PA/PR schedule dates, and committed tasks. Updates dynamically when tasks are moved, reassigned, SP edited, tasks refreshed from Jira, or changes discarded
+- **Holiday display**: capacity card subtitle shows working days and holiday names in the sprint; AVAIL column tooltip shows full breakdown (weekdays − holidays)
 - **Editable Efficiency %**: per-person, recalculates capacity in real time, auto-saved to config
 - **Editable Unscheduled Buffer**: team-level buffer, recalculates net capacity in real time
 - **Draggable backlog sections**: drag backlog headers to reorder; order persists in `backlog-prefs.json`
-- **Pending changes persist**: all pending edits and moves survive page reloads (stored in localStorage)
+- **Sortable columns**: click Epic, Type, Assignee, or Priority column headers to sort tasks ascending/descending
+- **Epic column**: each task shows its parent epic name (linked to Jira) in all tables
+- **Pending changes persist**: all pending edits and moves survive page reloads (stored in localStorage). Multiple edits to the same task are merged into a single entry in the pending panel.
 - **Discard All**: reverts all pending changes, moving tasks back to their original backlogs
 - **Settings gear**: configure board URL, team members, PA toggle, default unscheduled buffer, backlog sprint selection
-- **↻ Refresh Tasks**: fetches latest SP, assignees, priorities, and any new tasks from Jira
-- **Apply to Jira**: syncs all pending changes (sprint moves, SP edits, assignee edits, priority edits) to Jira
+- **Apply to Jira**: syncs all pending changes (sprint moves, SP edits, assignee edits, priority edits) to Jira. Shows a progress bar with per-item status (✓/✗) as each change syncs.
 - **Save**: exports a standalone HTML snapshot of the current sprint plan (header, team capacity, summary, sprint commitment). No JavaScript or server dependencies — priority icons are embedded as data URIs. Filename: `sprint-plan_{sprint-name}.html`. Disabled when sprint commitment is empty.
 
 **Jira fields written by Apply to Jira:**

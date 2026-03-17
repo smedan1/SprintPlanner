@@ -141,10 +141,19 @@
   tr.epic-child-row:hover td { background: #eee8ff !important; }
   tr.epic-child-row td:first-child { padding-left: 32px; border-left: 3px solid #eae6ff; }
   tr.epic-child-row.not-in-backlog { cursor: grab; }
+  .epic-cell { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: #5e6c84; }
+  .epic-cell a { color: #5e6c84; text-decoration: none; }
+  .epic-cell a:hover { color: #0052cc; text-decoration: underline; }
   tr.epic-child-row.not-in-backlog td:first-child { padding-left: 40px; position: relative; }
   tr.epic-child-row.not-in-backlog td:first-child::before { content: '⠿'; color: #c1c7d0; font-size: 11px; position: absolute; left: 22px; top: 50%; transform: translateY(-50%); }
   .backlog-indicator { display: inline-block; padding: 1px 6px; border-radius: 3px; font-size: 10px; font-weight: 600; background: #deebff; color: #0747a6; margin-left: 6px; white-space: nowrap; vertical-align: middle; }
   .epic-loading-row td { color: #97a0af; font-style: italic; padding-left: 32px !important; }
+
+  th.sortable { cursor: pointer; user-select: none; position: relative; padding-right: 16px !important; }
+  th.sortable:hover { color: #0052cc; }
+  th.sortable::after { content: '⇅'; font-size: 10px; color: #c1c7d0; position: absolute; right: 2px; top: 50%; transform: translateY(-50%); }
+  th.sortable.sort-asc::after { content: '▲'; color: #0052cc; }
+  th.sortable.sort-desc::after { content: '▼'; color: #0052cc; }
 
   .section-label { font-size: 11px; text-transform: uppercase; letter-spacing: .5px; color: #97a0af; padding: 10px 20px 4px; }
 
@@ -192,6 +201,7 @@
   #pending-body { margin-top: 10px; }
   #pending-panel p { font-size: 12px; color: #5e6c84; margin-bottom: 10px; }
   #pending-list { font-size: 12px; color: #172b4d; list-style: disc; padding-left: 18px; line-height: 1.8; margin-bottom: 14px; }
+  #pending-list li { transition: color .3s, opacity .3s; }
   #apply-btn {
     background: #0052cc; color: #fff; border: none; border-radius: 4px;
     padding: 8px 18px; font-size: 13px; font-weight: 600; cursor: pointer;
@@ -267,14 +277,6 @@
   .loading-row td { text-align: center; padding: 24px; font-size: 13px; font-weight: 500; color: #0052cc; }
   .loading-row td::before { content: '⏳ '; }
   .loading-row td { animation: loadingPulse 1.4s ease-in-out infinite; }
-
-  /* Refresh SP button */
-  #refresh-btn {
-    background: #fff; color: #172b4d; border: 1px solid #dfe1e6; border-radius: 4px;
-    padding: 6px 14px; font-size: 12px; font-weight: 500; cursor: pointer; margin-left: 12px;
-  }
-  #refresh-btn:hover { background: #f4f5f7; }
-  #refresh-btn:disabled { color: #97a0af; cursor: default; }
 
   /* ── Startup check overlay ── */
   #startup-overlay {
@@ -404,12 +406,13 @@
     <div class="card-header">
       <h2>Team Capacity</h2>
       <span class="source-note">Absences from Workday · Other deductions: enter manually</span>
+      <span class="source-note" id="capacity-holidays-note" style="display:none;"></span>
     </div>
     <table>
       <thead>
         <tr>
           <th title="Team member name">Person</th>
-          <th class="num" title="Vacation, sick days, and other time off">Absence</th>
+          <th class="num" title="Personal absences: vacation, sick days, and other time off (holidays are already subtracted from available days)">Absence</th>
           <th class="num pa-col" id="pa-col-header"><a id="pa-col-link" href="" target="_blank" title="Promotion Analysis duty — 1 day per rotation — Click to open in Confluence" style="color:inherit;text-decoration:none;border-bottom:1px dashed rgba(0,0,0,0.3);">PA</a></th>
           <th class="num pr-col" id="pr-col-header"><a id="pr-col-link" href="" target="_blank" title="Cross-team PR review duty — 0.5 days per rotation — Click to open in Confluence" style="color:inherit;text-decoration:none;border-bottom:1px dashed rgba(0,0,0,0.3);">PR</a></th>
           <th class="num" title="Keep The Lights On — operational/maintenance work">KTLO</th>
@@ -491,11 +494,21 @@
     <div id="pending-body" style="display:none;">
       <div style="display:flex;gap:8px;margin-bottom:10px;align-items:center;">
         <button id="apply-btn" onclick="applyToJira()">Apply to Jira</button>
-        <button id="refresh-btn" onclick="refreshTasks()">↻ Refresh Tasks</button>
         <span style="flex:1;"></span>
         <button id="discard-btn" onclick="discardAll()">Discard All</button>
       </div>
-      <p>Changes queued locally — click Apply to sync with Jira.</p>
+      <div id="apply-status">
+        <p id="apply-status-text">Changes queued locally — click Apply to sync with Jira.</p>
+        <div id="apply-progress" style="display:none;">
+          <div style="display:flex;justify-content:space-between;font-size:12px;color:#5e6c84;margin-bottom:4px;">
+            <span id="apply-progress-text">Applying...</span>
+            <span id="apply-progress-pct"></span>
+          </div>
+          <div class="headroom-bar">
+            <div id="apply-progress-fill" class="headroom-fill" style="width:0%;background:#006644;"></div>
+          </div>
+        </div>
+      </div>
       <ul id="pending-list"></ul>
     </div>
   </div>
@@ -516,10 +529,11 @@
         <tr>
           <th>Key</th>
           <th>Summary</th>
-          <th>Type</th>
-          <th>Assignee</th>
+          <th class="sortable" data-sort="epic">Epic</th>
+          <th class="sortable" data-sort="type">Type</th>
+          <th class="sortable" data-sort="assignee">Assignee</th>
           <th class="num">SP</th>
-          <th>Priority</th>
+          <th class="sortable" data-sort="priority">Priority</th>
           <th>Status</th>
         </tr>
       </thead>
@@ -1273,6 +1287,47 @@
   var PRI_CLASS    = { Critical:'pri-critical', Blocker:'pri-critical', Major:'pri-major', Minor:'pri-minor', Trivial:'pri-minor' };
   var JIRA_PRIORITIES = []; // [{id, name, iconUrl, localIcon}, ...] — populated from /api/priorities
 
+  // ── Column sorting ──
+  var PRIORITY_ORDER = { Showstopper: 0, Critical: 1, Major: 2, Minor: 3, None: 4, '': 5 };
+
+  function getSortValue(row, field) {
+    if (field === 'epic')     return (row.dataset.epicName || '').toLowerCase();
+    if (field === 'type')     return (row.dataset.issueType || '').toLowerCase();
+    if (field === 'assignee') return (row.dataset.assignee || '').toLowerCase();
+    if (field === 'priority') return PRIORITY_ORDER[row.dataset.priority] != null ? PRIORITY_ORDER[row.dataset.priority] : 99;
+    return '';
+  }
+
+  function sortTable(th) {
+    var field = th.dataset.sort;
+    var thead = th.closest('thead');
+    var tbody = thead.nextElementSibling;
+    if (!tbody || !tbody.classList.contains('droppable')) return;
+
+    // Toggle direction
+    var asc = !th.classList.contains('sort-asc');
+    // Clear sort indicators on sibling headers
+    thead.querySelectorAll('th.sortable').forEach(function(h) {
+      h.classList.remove('sort-asc', 'sort-desc');
+    });
+    th.classList.add(asc ? 'sort-asc' : 'sort-desc');
+
+    // Gather sortable rows (exclude epic child/loading rows)
+    var rows = Array.from(tbody.querySelectorAll('tr:not(.epic-child-row):not(.epic-loading-row):not(.loading-row)'));
+    rows.sort(function(a, b) {
+      var va = getSortValue(a, field);
+      var vb = getSortValue(b, field);
+      if (va < vb) return asc ? -1 : 1;
+      if (va > vb) return asc ? 1 : -1;
+      return 0;
+    });
+    rows.forEach(function(r) { tbody.appendChild(r); });
+  }
+
+  function wireSortableHeader(th) {
+    th.addEventListener('click', function() { sortTable(th); });
+  }
+
   function priIconHtml(issue) {
     // Find local icon from JIRA_PRIORITIES cache, or from issue data
     var iconPath = issue.priority_icon_local || '';
@@ -1300,11 +1355,17 @@
     tr.dataset.priorityId   = issue.priority_id || '';
     tr.dataset.issueType    = issue.type || '';
     tr.dataset.sourceSprint = String(issue.sprint_id);
+    tr.dataset.epicKey  = issue.epic_key  || '';
+    tr.dataset.epicName = issue.epic_name || '';
     var isEpic = (issue.type || '').toLowerCase() === 'epic';
     var expandIcon = isEpic ? '<span class="epic-expand-icon">&#9654;</span>' : '';
+    var epicCell = issue.epic_key
+      ? '<a href="https://jira.autodesk.com/browse/' + escHtml(issue.epic_key) + '" target="_blank" title="' + escHtml(issue.epic_name) + '">' + escHtml(issue.epic_name) + '</a>'
+      : '';
     tr.innerHTML =
       '<td>' + expandIcon + '<a href="https://jira.autodesk.com/browse/' + issue.key + '" target="_blank">' + issue.key + '</a></td>' +
       '<td>' + escHtml(issue.summary) + '</td>' +
+      '<td class="epic-cell">' + epicCell + '</td>' +
       '<td><span class="badge badge-' + type + '">' + escHtml(issue.type) + '</span></td>' +
       '<td>' + escHtml(asgn) + '</td>' +
       '<td class="num">' + (issue.sp != null ? sp : '—') + '</td>' +
@@ -1349,7 +1410,7 @@
     epicRow.classList.add('epic-expanded');
     var loadingRow = document.createElement('tr');
     loadingRow.className = 'epic-loading-row';
-    loadingRow.innerHTML = '<td colspan="7">Loading children…</td>';
+    loadingRow.innerHTML = '<td colspan="8">Loading children…</td>';
     epicRow.after(loadingRow);
 
     fetch('http://localhost:5000/api/epic-children?key=' + encodeURIComponent(key))
@@ -1361,7 +1422,7 @@
           var emptyRow = document.createElement('tr');
           emptyRow.className = 'epic-child-row';
           emptyRow.dataset.epicParent = key;
-          emptyRow.innerHTML = '<td colspan="7" style="color:#97a0af;font-style:italic;padding-left:32px;">No child issues</td>';
+          emptyRow.innerHTML = '<td colspan="8" style="color:#97a0af;font-style:italic;padding-left:32px;">No child issues</td>';
           epicRow.after(emptyRow);
           return;
         }
@@ -1423,6 +1484,7 @@
     tr.innerHTML =
       '<td><a href="https://jira.autodesk.com/browse/' + child.key + '" target="_blank">' + child.key + '</a>' + sprintBadges + '</td>' +
       '<td>' + escHtml(child.summary) + '</td>' +
+      '<td class="epic-cell"></td>' +
       '<td><span class="badge badge-' + type + '">' + escHtml(child.type) + '</span></td>' +
       '<td>' + escHtml(child.assignee_display || '') + '</td>' +
       '<td class="num">' + (child.sp != null ? sp : '—') + '</td>' +
@@ -1506,6 +1568,8 @@
     var childKey = epicChildRow.dataset.key;
 
     // Build a proper issue object for building a normal row
+    var epicParentKey = epicChildRow.dataset.epicParent || '';
+    var epicParentRow = epicParentKey ? document.querySelector('tr[data-key="' + epicParentKey + '"]') : null;
     var issue = {
       key: childKey,
       summary: epicChildRow.querySelectorAll('td')[1].textContent.trim(),
@@ -1513,11 +1577,13 @@
       assignee_display: epicChildRow.dataset.assignee || '',
       assignee_name: epicChildRow.dataset.assigneeKey || '',
       type: epicChildRow.dataset.issueType || '',
-      status: epicChildRow.querySelectorAll('td')[6].textContent.trim(),
+      status: epicChildRow.querySelectorAll('td')[7].textContent.trim(),
       priority: epicChildRow.dataset.priority || '',
       priority_id: epicChildRow.dataset.priorityId || '',
       priority_icon: '',
       sprint_id: parseInt(targetSprintId),
+      epic_key: epicParentKey,
+      epic_name: epicParentRow ? epicParentRow.querySelectorAll('td')[1].textContent.trim() : '',
     };
 
     // Create a normal editable row in the target backlog
@@ -1585,9 +1651,9 @@
     row.dataset.origAssignee = row.dataset.assignee || '';
     row.dataset.origPriority = row.dataset.priority || '';
 
-    // ── Assignee (col 3) ──
+    // ── Assignee (col 4) ──
     var TEAM_MEMBERS = [''].concat(teamConfig.team || []);
-    var assigneeCell = tds[3];
+    var assigneeCell = tds[4];
     var assigneeVal  = row.dataset.assignee || '';
     var asgSelect    = document.createElement('select');
     asgSelect.className = 'assignee-edit';
@@ -1616,9 +1682,9 @@
     assigneeCell.textContent = '';
     assigneeCell.appendChild(asgSelect);
 
-    // ── Priority (col 5) ──
+    // ── Priority (col 6) ──
     if (JIRA_PRIORITIES.length) {
-      var priCell = tds[5];
+      var priCell = tds[6];
       var priVal  = row.dataset.priority || '';
       var allowedPri = ['Showstopper', 'Critical', 'Major', 'Minor', 'None'];
       // Build custom dropdown with icons
@@ -1705,8 +1771,8 @@
       priCell.appendChild(picker);
     }
 
-    // ── SP (col 4) ──
-    var spCell  = tds[4];
+    // ── SP (col 5) ──
+    var spCell  = tds[5];
     var spVal   = parseFloat(row.dataset.sp) || 0;
     var spInput = document.createElement('input');
     spInput.type        = 'number';
@@ -1775,11 +1841,13 @@
         '<span class="source-note" id="backlog-note-' + sprintId + '">Loading...</span>' +
       '</div>' +
       '<table><thead><tr>' +
-        '<th>Key</th><th>Summary</th><th>Type</th><th>Assignee</th><th class="num">SP</th><th>Priority</th><th>Status</th>' +
+        '<th>Key</th><th>Summary</th><th class="sortable" data-sort="epic">Epic</th><th class="sortable" data-sort="type">Type</th><th class="sortable" data-sort="assignee">Assignee</th><th class="num">SP</th><th class="sortable" data-sort="priority">Priority</th><th>Status</th>' +
       '</tr></thead>' +
       '<tbody class="droppable" data-sprint-id="' + sprintId + '">' +
-        '<tr class="loading-row"><td colspan="7">Fetching tasks from Jira...</td></tr>' +
+        '<tr class="loading-row"><td colspan="8">Fetching tasks from Jira...</td></tr>' +
       '</tbody></table>';
+    // Wire sortable headers for this backlog section
+    card.querySelectorAll('th.sortable').forEach(wireSortableHeader);
     document.getElementById('backlog-container').appendChild(card);
     var tbody = card.querySelector('tbody.droppable');
     wireDropEvents(tbody);
@@ -1971,19 +2039,42 @@
     var panel = document.getElementById('pending-panel');
     var list  = document.getElementById('pending-list');
     list.innerHTML = '';
-    Object.values(pendingMoves).forEach(function (m) {
-      var li = document.createElement('li');
-      li.textContent = m.label;
-      list.appendChild(li);
-    });
-    Object.keys(pendingEdits).forEach(function (k) {
-      var edit  = pendingEdits[k];
+    // Collect all unique issue keys
+    var allKeys = {};
+    Object.values(pendingMoves).forEach(function (m) { allKeys[m.issueKey] = true; });
+    Object.keys(pendingEdits).forEach(function (k) { allKeys[k] = true; });
+    Object.keys(allKeys).forEach(function (key) {
       var parts = [];
-      if ('sp' in edit)       parts.push('SP → ' + (edit.sp != null ? edit.sp : '—'));
-      if ('assignee' in edit) parts.push('Assignee → ' + (edit.assignee || '(none)'));
-      if ('priority' in edit) parts.push('Priority → ' + edit.priority);
+      var move = pendingMoves[key];
+      var edit = pendingEdits[key];
+      // Header: key + summary (from move label or row)
+      var header = key;
+      if (move) {
+        // label format: "KEY · Summary · Src → Dest" — extract summary and move
+        var segs = move.label.split(' · ');
+        if (segs.length >= 2) header = segs[0] + ' · ' + segs[1];
+        if (segs.length >= 3) parts.push(segs.slice(2).join(' · '));
+      } else {
+        var row = document.querySelector('tr[data-key="' + key + '"]');
+        if (row) {
+          var sum = row.querySelectorAll('td')[1];
+          if (sum) {
+            var txt = sum.textContent.trim();
+            if (txt.length > 48) txt = txt.slice(0, 47) + '…';
+            header = key + ' · ' + txt;
+          }
+        }
+      }
+      if (edit) {
+        var editParts = [];
+        if ('sp' in edit)       editParts.push('SP → ' + (edit.sp != null ? edit.sp : '—'));
+        if ('assignee' in edit) editParts.push('Assignee → ' + (edit.assignee || '(none)'));
+        if ('priority' in edit) editParts.push('Priority → ' + edit.priority);
+        if (editParts.length) parts.push(editParts.join(', '));
+      }
       var li = document.createElement('li');
-      li.textContent = k + ' · ' + parts.join(', ');
+      li.dataset.key = key;
+      li.textContent = header + (parts.length ? ' · ' + parts.join(' · ') : '');
       list.appendChild(li);
     });
     var count = list.children.length;
@@ -2039,7 +2130,7 @@
           var icon = picker.querySelector('.pri-icon');
           if (icon && pInfo && pInfo.localIcon) icon.src = pInfo.localIcon;
         }
-        var priTd = row.querySelectorAll('td')[5];
+        var priTd = row.querySelectorAll('td')[6];
         if (priTd) priTd.className = PRI_CLASS[edit.priority] || 'pri-minor';
       }
     });
@@ -2108,7 +2199,7 @@
           var icon = picker.querySelector('.pri-icon');
           if (icon && pInfo && pInfo.localIcon) icon.src = pInfo.localIcon;
         }
-        var priTd = row.querySelectorAll('td')[5];
+        var priTd = row.querySelectorAll('td')[6];
         if (priTd) priTd.className = PRI_CLASS[origPri] || 'pri-minor';
       }
     });
@@ -2136,16 +2227,77 @@
 
     if (ops.length === 0) { btn.disabled = false; btn.textContent = 'Apply to Jira'; return; }
 
+    // Show progress bar
+    var statusText = document.getElementById('apply-status-text');
+    var progressDiv = document.getElementById('apply-progress');
+    var progressText = document.getElementById('apply-progress-text');
+    var progressPct = document.getElementById('apply-progress-pct');
+    var progressFill = document.getElementById('apply-progress-fill');
+    statusText.style.display = 'none';
+    progressDiv.style.display = 'block';
+    progressFill.style.width = '0%';
+    progressFill.style.background = '#006644';
+
+    var total = ops.length;
+    var doneCount = 0;
+    var hasFailure = false;
+    // Track per-key op counts (a key may have both a move and an edit)
+    var keyOps = {};
+    ops.forEach(function (op) {
+      if (!keyOps[op.key]) keyOps[op.key] = { total: 0, done: 0, failed: false };
+      keyOps[op.key].total++;
+    });
+
+    function markListItem(key, success) {
+      var ko = keyOps[key];
+      if (!ko) return;
+      ko.done++;
+      if (!success) ko.failed = true;
+      if (ko.done < ko.total) return; // wait for all ops on this key
+      var li = document.querySelector('#pending-list li[data-key="' + key + '"]');
+      if (!li) return;
+      var icon = ko.failed ? '✗ ' : '✓ ';
+      li.textContent = icon + li.textContent;
+      li.style.color = ko.failed ? '#bf2600' : '#006644';
+      if (!ko.failed) li.style.opacity = '0.5';
+    }
+
+    function updateProgress() {
+      var pct = Math.round((doneCount / total) * 100);
+      progressText.textContent = doneCount < total ? 'Applying ' + doneCount + ' of ' + total + '...' : '';
+      progressPct.textContent = pct + '%';
+      progressFill.style.width = pct + '%';
+      if (hasFailure) progressFill.style.background = '#ff8b00';
+    }
+    updateProgress();
+
     var done = 0, failed = [];
-    function onDone() {
+    function onDone(opKey, success) {
+      if (!success) hasFailure = true;
+      doneCount++;
+      markListItem(opKey, success);
+      updateProgress();
       done++;
-      if (done === ops.length) {
+      if (done === total) {
+        btn.disabled = false;
         btn.textContent = 'Apply to Jira';
         if (failed.length === 0) clearPendingStorage();
         else savePendingToStorage();
-        renderPendingPanel();
-        if (failed.length === 0) showToast('✓ All changes synced to Jira', 'success');
-        else showToast('⚠ ' + failed.length + ' change(s) failed — is sprint-server.py running?', 'warn');
+        if (failed.length === 0) {
+          progressText.textContent = '✓ All ' + total + ' changes synced';
+          progressPct.textContent = '';
+          progressFill.style.background = '#006644';
+          setTimeout(function () {
+            progressDiv.style.display = 'none';
+            statusText.style.display = '';
+            renderPendingPanel();
+          }, 3000);
+        } else {
+          progressText.textContent = '⚠ ' + failed.length + ' of ' + total + ' failed';
+          progressPct.textContent = '';
+          renderPendingPanel();
+          showToast('⚠ ' + failed.length + ' change(s) failed — is sprint-server.py running?', 'warn');
+        }
       }
     }
 
@@ -2155,9 +2307,8 @@
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ issue_key: op.move.issueKey, sprint_id: op.move.targetSprintId })
         })
-        .then(function (r) { if (!r.ok) throw new Error(); delete pendingMoves[op.key]; })
-        .catch(function () { failed.push(op.key); })
-        .finally(onDone);
+        .then(function (r) { if (!r.ok) throw new Error(); delete pendingMoves[op.key]; onDone(op.key, true); })
+        .catch(function () { failed.push(op.key); onDone(op.key, false); });
       } else {
         var payload = { issue_key: op.key };
         if ('sp'       in op.edit) payload.sp       = op.edit.sp;
@@ -2167,9 +2318,8 @@
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
         })
-        .then(function (r) { if (!r.ok) throw new Error(); delete pendingEdits[op.key]; })
-        .catch(function () { failed.push(op.key); })
-        .finally(onDone);
+        .then(function (r) { if (!r.ok) throw new Error(); delete pendingEdits[op.key]; onDone(op.key, true); })
+        .catch(function () { failed.push(op.key); onDone(op.key, false); });
       }
     });
   };
@@ -2264,18 +2414,13 @@
   // ── Refresh tasks from Jira (SP + assignee + new tasks) ──
   window.refreshTasks = function (silent) {
     collapseAllEpics();
-    var btns = [document.getElementById('refresh-btn')];
-    btns.forEach(function (b) { if (b) { b.disabled = true; b.textContent = '↻ Loading…'; } });
     if (!silent) showToast('⏳ Fetching tasks from Jira…', 'info');
 
     var sprintIds = [];
     document.querySelectorAll('tbody.droppable[data-sprint-id]').forEach(function (tb) {
       if (tb.dataset.sprintId) sprintIds.push(tb.dataset.sprintId);
     });
-    if (sprintIds.length === 0) {
-      btns.forEach(function (b) { if (b) { b.disabled = false; b.textContent = '↻ Refresh Tasks'; } });
-      return;
-    }
+    if (sprintIds.length === 0) return;
 
     fetch('http://localhost:5000/api/sprint-issues?sprints=' + sprintIds.join(','))
       .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
@@ -2305,7 +2450,7 @@
                 row.dataset.origSp = issue.sp != null ? String(newSP) : '';
                 var spInput = row.querySelector('.sp-edit');
                 if (spInput) spInput.value = issue.sp != null ? newSP : '';
-                flashCell(row.querySelectorAll('td')[4]);
+                flashCell(row.querySelectorAll('td')[5]);
                 updatedSP++;
               }
               // Update Assignee
@@ -2317,7 +2462,7 @@
                 row.dataset.assigneeKey  = issue.assignee_name || '';
                 var aInput = row.querySelector('.assignee-edit');
                 if (aInput) aInput.value = newAsgn;
-                flashCell(row.querySelectorAll('td')[3]);
+                flashCell(row.querySelectorAll('td')[4]);
                 updatedAsgn++;
               }
               // Update Priority
@@ -2337,7 +2482,7 @@
                     mi.classList.toggle('selected', mi.dataset.name === newPri);
                   });
                 }
-                var priTd = row.querySelectorAll('td')[5];
+                var priTd = row.querySelectorAll('td')[6];
                 if (priTd) { priTd.className = PRI_CLASS[newPri] || 'pri-minor'; flashCell(priTd); }
               }
             } else {
@@ -2368,9 +2513,6 @@
       })
       .catch(function () {
         showToast('⚠ Could not reach sprint-server.py — is it running?', 'warn');
-      })
-      .finally(function () {
-        btns.forEach(function (b) { if (b) { b.disabled = false; b.textContent = '↻ Refresh Tasks'; } });
       });
   };
 
@@ -2440,6 +2582,8 @@
   document.addEventListener('DOMContentLoaded', function() {
     var urlInput = document.getElementById('settings-board-url');
     if (urlInput) urlInput.addEventListener('input', updateBoardIdDisplay);
+    // Wire sortable headers on sprint commitment table
+    document.querySelectorAll('#sprint-commit-table th.sortable').forEach(wireSortableHeader);
   });
 
   function renderSettingsTeamList(team) {
@@ -2727,8 +2871,28 @@
           };
 
           var hCount = data.holidays_in_sprint.length;
-          var hText = hCount === 0 ? '0 holidays' : hCount + ' holiday' + (hCount > 1 ? 's' : '') + ': ' + data.holidays_in_sprint.map(function(h) { return h.name; }).join(', ');
+          var hNames = data.holidays_in_sprint.map(function(h) { return h.name; });
+          var hText = hCount === 0 ? '0 holidays' : hCount + ' holiday' + (hCount > 1 ? 's' : '') + ': ' + hNames.join(', ');
           document.getElementById('meta-holidays').textContent = '\uD83C\uDFD6 ' + hText;
+
+          // Capacity card subtitle: working days + holidays
+          var capNote = document.getElementById('capacity-holidays-note');
+          if (capNote) {
+            var wd = data.working_days + ' working days';
+            capNote.textContent = hCount > 0
+              ? wd + ' · ' + hCount + ' holiday' + (hCount > 1 ? 's' : '') + ': ' + hNames.join(', ')
+              : wd + ' · No holidays';
+            capNote.style.display = '';
+          }
+          // AVAIL column tooltip with holiday detail
+          var availTh = document.querySelector('th[title*="Working days minus"]');
+          if (availTh) {
+            var totalWeekdays = data.working_days + hCount;
+            var tip = data.working_days + ' working days (' + totalWeekdays + ' weekdays';
+            if (hCount > 0) tip += ' \u2212 ' + hCount + ' holidays: ' + hNames.join(', ');
+            tip += ') minus deductions';
+            availTh.title = tip;
+          }
 
           // Update sprint commitment header + tbody
           document.getElementById('sprint-commit-title').textContent = 'Sprint Commitment \u2014 ' + data.sprint_name;
@@ -3273,8 +3437,8 @@
     // If no assignee-edit selects were found, assignee is still plain text from data-assignee
     commitCard.querySelectorAll('tr[data-key]').forEach(function(row) {
       var tds = row.querySelectorAll('td');
-      if (tds[3] && !tds[3].textContent.trim() && row.dataset.assignee) {
-        tds[3].textContent = row.dataset.assignee;
+      if (tds[4] && !tds[4].textContent.trim() && row.dataset.assignee) {
+        tds[4].textContent = row.dataset.assignee;
       }
     });
     // Replace priority pickers with static text + inline icon

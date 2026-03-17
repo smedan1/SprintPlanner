@@ -218,11 +218,35 @@ def get_story_points(issue_keys: list[str]) -> tuple[int, dict]:
         return 0, {}
 
 
+def _resolve_epic_names(epic_keys: list[str]) -> dict[str, str]:
+    """Batch-fetch epic summaries by key. Returns {key: summary}."""
+    if not epic_keys:
+        return {}
+    jql = 'key in (' + ','.join(epic_keys) + ')'
+    params = urllib.parse.urlencode({
+        'jql': jql,
+        'fields': 'summary',
+        'maxResults': len(epic_keys),
+    })
+    req = urllib.request.Request(
+        f'{JIRA_URL}/rest/api/2/search?{params}',
+        method='GET',
+        headers={'Content-Type': 'application/json', 'Authorization': f'Bearer {JIRA_TOKEN}'}
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            body = json.loads(resp.read().decode('utf-8'))
+        return {i['key']: i['fields'].get('summary', '') for i in body.get('issues', [])}
+    except Exception as e:
+        print(f'  x Failed to resolve epic names: {e}')
+        return {}
+
+
 def get_issues_for_sprint(sprint_id: int) -> list[dict]:
     """Fetch all issues in a sprint with SP, assignee, and metadata."""
     params = urllib.parse.urlencode({
         'jql': f'sprint = {sprint_id} ORDER BY created ASC',
-        'fields': 'customfield_10130,assignee,summary,issuetype,status,priority',
+        'fields': 'customfield_10130,customfield_12780,assignee,summary,issuetype,status,priority',
         'maxResults': 500,
     })
     req = urllib.request.Request(
@@ -243,6 +267,12 @@ def get_issues_for_sprint(sprint_id: int) -> list[dict]:
             assignee = fields.get('assignee') or {}
             pri      = fields.get('priority') or {}
             pri_name = _strip_pri_name(pri.get('name', ''))
+            epic_raw = fields.get('customfield_12780')
+            epic_key = ''
+            if isinstance(epic_raw, str):
+                epic_key = epic_raw
+            elif isinstance(epic_raw, dict):
+                epic_key = epic_raw.get('value', '') or epic_raw.get('key', '')
             result.append({
                 'key':              i['key'],
                 'summary':          fields.get('summary', ''),
@@ -255,7 +285,16 @@ def get_issues_for_sprint(sprint_id: int) -> list[dict]:
                 'priority_id':      pri.get('id', ''),
                 'priority_icon':    pri.get('iconUrl', ''),
                 'sprint_id':        sprint_id,
+                'epic_key':         epic_key,
+                'epic_name':        '',
             })
+        # Batch-resolve epic names
+        epic_keys = list(set(r['epic_key'] for r in result if r['epic_key']))
+        if epic_keys:
+            epic_names = _resolve_epic_names(epic_keys)
+            for r in result:
+                if r['epic_key']:
+                    r['epic_name'] = epic_names.get(r['epic_key'], '')
         return result
     except Exception:
         return []

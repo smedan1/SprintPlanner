@@ -83,9 +83,11 @@ On first launch with no team configured, the Settings modal opens automatically.
 - **Edit priority** via a custom dropdown with Jira priority icons
 - **Edit efficiency %** per person (auto-saved to config)
 - **Reorder backlog sections** by dragging their headers; order persists across reloads
-- **Pending changes persist** across page reloads (stored in localStorage)
+- **Sort columns** by clicking Epic, Type, Assignee, or Priority headers (toggles ascending/descending)
+- **Epic column** shows the parent epic name for each task, linked to Jira
+- **Pending changes persist** across page reloads (stored in localStorage); multiple edits to the same task are merged into one entry
 - **Discard All** reverts all pending changes and moves tasks back to their original backlogs
-- Click **Apply to Jira** to sync all changes
+- Click **Apply to Jira** to sync all changes — a progress bar shows real-time status with per-item ✓/✗ feedback
 - Click **Save** to export a standalone HTML snapshot for offline reference (no server needed to view)
 
 ## Configuration Reference
@@ -133,7 +135,7 @@ Person Capacity = (Working Days x Efficiency%) - Absence - Events - Hackathon - 
 Team Net Capacity = Sum of person capacities - Unscheduled buffer
 ```
 
-- **Working Days**: Mon-Fri in the sprint window (typically 10 for a 2-week sprint), minus holidays
+- **Working Days**: Mon-Fri in the sprint window (typically 10 for a 2-week sprint), minus holidays. Holidays in the sprint are shown in the capacity card subtitle and in the AVAIL column tooltip.
 - **Efficiency %**: what fraction of available time goes to sprint work (default 70%)
 - **Deductions**: subtracted after efficiency is applied (1 day of vacation = 1 full day deducted)
 - **SP=0**: special value meaning 4h of work; counts as 0.5 SP in capacity math (display still shows "0")
