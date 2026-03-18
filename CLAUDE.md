@@ -43,8 +43,11 @@ All team-specific settings are stored in `team-config.json`:
 
 ```json
 {
+  "project_key": "FDATA",
   "board_id": 17259,
   "board_url": "https://jira.autodesk.com/secure/RapidBoard.jspa?rapidView=17259",
+  "board_name": "Gemini",
+  "team_name": "Gemini",
   "team": ["Person A", "Person B", ...],
   "efficiency": {
     "default": 70,
@@ -55,9 +58,14 @@ All team-specific settings are stored in `team-config.json`:
   "pr_enabled": true,
   "pr_confluence_url": "https://autodesk.atlassian.net/wiki/x/fJH5L",
   "pr_duty_weight": 0.5,
-  "confluence_account_ids": {}
+  "confluence_account_ids": {},
+  "unscheduled_buffer": 5
 }
 ```
+
+- `board_name` — the Jira board name (from the board picker)
+- `team_name` — the value from the Team dropdown (Jira `customfield_19700`); used to pre-select the team on next Settings open. May differ from `board_name` if the board has a different display name.
+- `pa_enabled` / `pr_enabled` — default to `false` for new installs. Must be explicitly enabled in Settings.
 
 Settings are managed via the gear icon in the UI header. On first run with no team configured, the settings modal opens automatically.
 
@@ -94,21 +102,22 @@ Settings are managed via the gear icon in the UI header. On first run with no te
 - For each sprint, check the schedule for entries whose date falls within `[start_date, end_date)` — reserve 1 day PA per person matched
 - PA is optional — can be disabled in settings for teams that don't use it
 - PR review schedule page URL is configured in `team-config.json` (`pr_confluence_url`)
-- PR page has a 3-column table (Team, Person, Date). Only "Gemini" rows are included. Deduction per rotation configurable via `pr_duty_weight` (0.5 = half day, 1 = full day)
+- PR page has a 3-column table (Team, Person, Date). Only rows matching the configured board name are included. Deduction per rotation configurable via `pr_duty_weight` (0.5 = half day, 1 = full day)
 - PR is optional — can be disabled in settings for teams that don't use it
 
 ## Jira Boards & Sprints
 
-- Board ID and URL are configured in `team-config.json` (set via Settings)
-- Sprint naming pattern: `YYYY-MM-DD <BoardName>` (2-week cadence)
-- Backlog sprints (e.g. "Stretch Goal") are selected in Settings
+- Board ID, URL, and name are configured in `team-config.json` (set via the Settings board picker)
+- The Settings board picker works by: (1) selecting a **Team** from a dropdown auto-populated from Jira `customfield_19700`, (2) searching Jira Scrum boards matching that team name, (3) auto-selecting if exactly one board matches
+- Backlog sprints (those without a `startDate`) are selected in Settings and appear as additional drag-from sections
 
 ### How to identify the sprint to plan
 
 1. Call `jira_get_sprints_from_board` on the configured board with `state=active` → that's the **current sprint**
-2. Call with `state=future` → find the sprint named `YYYY-MM-DD <name>` (ignore backlog sprints) — that's the **sprint to plan**
+2. Call with `state=future` → the sprint with the earliest `startDate` is the **sprint to plan**. Sprints without a `startDate` are treated as backlog sprints.
 3. The sprint to plan's `start_date` and `end_date` define the window. **`end_date` is exclusive** (first day of next sprint). Working days = Mon–Fri within `[start_date, end_date)` = typically 10 days
 4. Use the sprint-to-plan's ID to pull its issues; also pull from selected backlog sprints
+5. If no future sprint has a `startDate`, the server returns HTTP 404 with the hint: "Add a start date to the next sprint in Jira for &lt;board&gt;"
 
 ## Holiday List
 
@@ -157,7 +166,7 @@ Stored in `holidays-ca-qc.json`. Covers Canada + Quebec holidays for **2026**.
 - **Epic column**: each task shows its parent epic name (linked to Jira) in all tables
 - **Pending changes persist**: all pending edits and moves survive page reloads (stored in localStorage). Multiple edits to the same task are merged into a single entry in the pending panel.
 - **Discard All**: reverts all pending changes, moving tasks back to their original backlogs
-- **Settings gear**: configure board URL, team members, PA toggle, default unscheduled buffer, backlog sprint selection
+- **Settings gear**: configure Jira project key, team (dropdown auto-populated from Jira Team field), board (auto-searched and auto-selected), team members, PA/PR toggles, default unscheduled buffer, backlog sprint selection. Switching boards triggers a full UI refresh: DOM cleared, caches invalidated, PA/PR schedules re-fetched, absence staleness warning shown.
 - **Apply to Jira**: syncs all pending changes (sprint moves, SP edits, assignee edits, priority edits) to Jira. Shows a progress bar with per-item status (✓/✗) as each change syncs.
 - **Save**: exports a standalone HTML snapshot of the current sprint plan (header, team capacity, summary, sprint commitment). No JavaScript or server dependencies — priority icons are embedded as data URIs. Filename: `sprint-plan_{sprint-name}.html`. Disabled when sprint commitment is empty.
 

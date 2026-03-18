@@ -196,6 +196,9 @@ def check_docker() -> tuple[bool, str]:
         return False, str(e)
 
 
+TEAM_FIELD_ID = 'customfield_19700'  # "Team" multiselect on FDATA issues
+
+
 def get_story_points(issue_keys: list[str]) -> tuple[int, dict]:
     params = urllib.parse.urlencode({
         'jql': 'key in (' + ','.join(issue_keys) + ')',
@@ -455,12 +458,20 @@ def move_issue_to_sprint(issue_key: str, sprint_id: int) -> tuple[int, str]:
 # ── Team config ──────────────────────────────────────────────────────────────
 
 _DEFAULT_CONFIG = {
+    'project_key': '',
     'board_id': 0,
     'board_url': '',
+    'board_name': '',
+    'team_name': '',
     'team': [],
     'efficiency': {
         'default': 70,
     },
+    'pa_enabled': False,
+    'pa_confluence_url': '',
+    'pr_enabled': False,
+    'pr_confluence_url': '',
+    'pr_duty_weight': 0.5,
     'confluence_account_ids': {},
     'unscheduled_buffer': 5,
 }
@@ -495,7 +506,28 @@ def save_team_config(cfg: dict) -> None:
 
 
 def get_board_id() -> int:
-    return load_team_config().get('board_id', 17259)
+    return load_team_config().get('board_id', 0)
+
+
+def get_board_name() -> str:
+    """Return configured board name, auto-migrating from Jira if missing."""
+    cfg = load_team_config()
+    name = cfg.get('board_name', '')
+    if not name and cfg.get('board_id'):
+        try:
+            req = urllib.request.Request(
+                f'{JIRA_URL}/rest/agile/1.0/board/{cfg["board_id"]}',
+                headers={'Authorization': f'Bearer {JIRA_TOKEN}'})
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                data = json.loads(resp.read().decode('utf-8'))
+                name = data.get('name', '')
+                if name:
+                    cfg['board_name'] = name
+                    save_team_config(cfg)
+                    print(f'  > Auto-detected board name: {name}')
+        except Exception as e:
+            print(f'  x Failed to fetch board name: {e}')
+    return name
 
 
 def get_team() -> list[str]:
@@ -951,7 +983,7 @@ def _get_pr_page_id() -> str:
 def fetch_pr_from_confluence(sprint_start_str: str, sprint_end_str: str) -> dict:
     """Fetch PR review schedule from Confluence, return {person: {days, dates}} for the sprint.
     Stores rotation count (1 per duty); weight is applied at read time via pr_duty_weight config.
-    sprint_end is exclusive. Only rows where Team column contains 'Gemini' are included."""
+    sprint_end is exclusive. Only rows matching the configured board name are included."""
     token = get_confluence_session_token()
     if not token:
         raise RuntimeError('No Confluence session token')
@@ -1002,9 +1034,10 @@ def fetch_pr_from_confluence(sprint_start_str: str, sprint_end_str: str) -> dict
         if len(tds) < 3:
             continue
 
-        # First column is Team — only include "Gemini" rows
+        # First column is Team — only include rows matching configured board name
         team_cell = re.sub(r'<[^>]+>', '', tds[0]).strip().lower()
-        if 'gemini' not in team_cell:
+        board_name = get_board_name()
+        if board_name and board_name.lower() not in team_cell:
             continue
 
         # Extract date from the row
@@ -1098,8 +1131,9 @@ def check_pr_freshness() -> dict:
 
 def get_future_sprint_info(board_id: int) -> tuple[dict | None, dict]:
     """Fetch future sprints from Jira Agile API.
-    Returns (sprint_to_plan, backlog_sprints_map) where sprint_to_plan is
-    {id, name, startDate, endDate} or None, and backlog_sprints_map is {id_str: name}."""
+    Returns (sprint_to_plan, backlog_sprints_map).
+    sprint_to_plan = the future sprint with the earliest startDate.
+    Future sprints without a startDate are treated as backlog sprints."""
     req = urllib.request.Request(
         f'{JIRA_URL}/rest/agile/1.0/board/{board_id}/sprint?state=future',
         method='GET',
@@ -1107,26 +1141,25 @@ def get_future_sprint_info(board_id: int) -> tuple[dict | None, dict]:
     )
     try:
         with urllib.request.urlopen(req, timeout=15) as resp:
-            body = json.loads(resp.read().decode('utf-8'))
+            sprints = json.loads(resp.read().decode('utf-8')).get('values', [])
     except Exception as e:
-        print(f'  x Failed to fetch future sprints: {e}')
+        print(f'  x Failed to fetch future sprints for board {board_id}: {e}')
         return None, {}
 
-    sprints = body.get('values', [])
-    pattern = re.compile(r'^\d{4}-\d{2}-\d{2} Gemini$')
     sprint_to_plan = None
     backlog = {}
 
     for s in sprints:
-        name = s.get('name', '')
-        if pattern.match(name):
-            if sprint_to_plan is None:
-                sprint_to_plan = s
-            # If multiple match, take the earliest start date
-            elif s.get('startDate', '') < sprint_to_plan.get('startDate', ''):
+        if s.get('startDate'):
+            if sprint_to_plan is None or s['startDate'] < sprint_to_plan['startDate']:
                 sprint_to_plan = s
         else:
-            backlog[str(s['id'])] = name
+            backlog[str(s['id'])] = s.get('name', '')
+
+    # Future sprints with a startDate that weren't selected go to backlog
+    for s in sprints:
+        if s.get('startDate') and s is not sprint_to_plan:
+            backlog[str(s['id'])] = s.get('name', '')
 
     return sprint_to_plan, backlog
 
@@ -1378,11 +1411,89 @@ class Handler(BaseHTTPRequestHandler):
             self._respond(200, {'children': children})
             return
 
+        # ── /api/boards ── search scrum boards by project + name
+        if parsed.path == '/api/boards':
+            qs = urllib.parse.parse_qs(parsed.query)
+            name_filter = qs.get('name', [''])[0].strip()
+            project_filter = qs.get('project', [''])[0].strip()
+            try:
+                params = 'type=scrum&maxResults=50'
+                if project_filter:
+                    params += '&projectKeyOrId=' + urllib.parse.quote(project_filter)
+                if name_filter:
+                    params += '&name=' + urllib.parse.quote(name_filter)
+                url = f'{JIRA_URL}/rest/agile/1.0/board?{params}'
+                req = urllib.request.Request(url, method='GET',
+                                             headers={'Authorization': f'Bearer {JIRA_TOKEN}'})
+                with urllib.request.urlopen(req, timeout=15) as resp:
+                    data = json.loads(resp.read().decode('utf-8'))
+                boards = [{'id': b['id'], 'name': b['name']} for b in data.get('values', [])]
+                boards.sort(key=lambda b: b['name'].lower())
+                print(f'  > Listed {len(boards)} scrum boards (project={project_filter!r}, name={name_filter!r})')
+                self._respond(200, boards)
+            except Exception as e:
+                print(f'  x Failed to list boards: {e}')
+                self._respond(502, {'error': str(e)})
+            return
+
+        # ── /api/project-teams ── list team names from Jira Team field for a project
+        if parsed.path == '/api/project-teams':
+            qs = urllib.parse.parse_qs(parsed.query)
+            project = qs.get('project', [''])[0].strip()
+            if not project:
+                self._respond(200, [])
+                return
+            teams = []
+            hdrs = {'Authorization': f'Bearer {JIRA_TOKEN}'}
+            try:
+                params = urllib.parse.urlencode({
+                    'jql': f'project = "{project}" AND cf[19700] is not EMPTY ORDER BY created DESC',
+                    'fields': TEAM_FIELD_ID,
+                    'maxResults': 500,
+                })
+                with urllib.request.urlopen(
+                    urllib.request.Request(f'{JIRA_URL}/rest/api/2/search?{params}',
+                                           headers=hdrs),
+                    timeout=15
+                ) as r:
+                    s_data = json.loads(r.read().decode('utf-8'))
+                seen = set()
+                for issue in s_data.get('issues', []):
+                    raw = issue.get('fields', {}).get(TEAM_FIELD_ID) or []
+                    # Jira Server returns multiselect as list of option dicts: [{id, value, self}]
+                    for opt in (raw if isinstance(raw, list) else []):
+                        v = opt.get('value', '') if isinstance(opt, dict) else str(opt)
+                        if v and v not in seen:
+                            seen.add(v)
+                            teams.append(v)
+            except Exception as e:
+                print(f'  x Failed to list teams via JQL: {e}')
+            teams = sorted(teams, key=str.lower)
+            print(f'  > Listed {len(teams)} teams for project {project!r}')
+            self._respond(200, teams)
+            return
+
+        # ── /api/board-sprints ── preview backlogs for a board (before save)
+        if parsed.path == '/api/board-sprints':
+            qs = urllib.parse.parse_qs(parsed.query)
+            bid = int(qs.get('board_id', ['0'])[0])
+            if not bid:
+                self._respond(400, {'error': 'Missing board_id'})
+                return
+            try:
+                sprint, backlog = get_future_sprint_info(bid)
+                self._respond(200, {'backlog_sprints': backlog})
+            except Exception as e:
+                self._respond(502, {'error': str(e)})
+            return
+
         # ── /api/sprint-info ──
         if parsed.path == '/api/sprint-info':
             sprint, backlog = get_future_sprint_info_cached(get_board_id())
             if not sprint:
-                self._respond(404, {'error': 'No future Gemini sprint found'})
+                board = get_board_name() or 'this board'
+                self._respond(404, {'error': f'No upcoming sprint found for {board}',
+                                    'hint': f'Add a start date to the next sprint in Jira for {board}'})
                 return
             start_str = sprint.get('startDate', '')[:10]
             end_str = sprint.get('endDate', '')[:10]
@@ -1498,7 +1609,7 @@ class Handler(BaseHTTPRequestHandler):
                 data = json.loads(body)
                 cfg = load_team_config()
                 # Only update allowed fields
-                for key in ('board_id', 'board_url', 'team', 'efficiency', 'confluence_account_ids', 'pa_enabled', 'pa_confluence_url', 'pr_enabled', 'pr_confluence_url', 'pr_duty_weight', 'unscheduled_buffer'):
+                for key in ('project_key', 'board_id', 'board_url', 'board_name', 'team_name', 'team', 'efficiency', 'confluence_account_ids', 'pa_enabled', 'pa_confluence_url', 'pr_enabled', 'pr_confluence_url', 'pr_duty_weight', 'unscheduled_buffer'):
                     if key in data:
                         cfg[key] = data[key]
                 save_team_config(cfg)

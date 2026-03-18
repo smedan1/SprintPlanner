@@ -61,15 +61,23 @@ Open `sprint-plan.html` in Chrome. A startup overlay checks that all services ar
 
 On first launch with no team configured, the Settings modal opens automatically. Configure:
 
-1. **Board URL**: paste your Jira board URL (e.g. `https://jira.autodesk.com/secure/RapidBoard.jspa?rapidView=12345`). The board ID is extracted automatically.
+1. **Jira Project**: enter your project key (e.g. `FDATA`).
 
-2. **Team Members**: click "Refresh from Workday" to auto-detect your team, or manually edit `team-config.json`.
+2. **Team**: select your team from the dropdown — it auto-populates from the Jira "Team" field values for that project. Selecting a team searches for matching boards automatically.
 
-3. **PA Schedule** (optional): enable if your team has a Promotion Analysis rotation. Provide the Confluence page URL containing the PA schedule table.
+3. **Board**: if multiple boards match, pick the correct one from the list. If exactly one matches, it is auto-selected.
 
-4. **Backlog Sprints**: select which backlog sprints to show (e.g. stretch goal sprints). These appear as additional sections you can drag tasks from.
+4. **Team Members**: click "Refresh from Workday" to auto-detect your team, or manually edit `team-config.json`.
 
-5. Click **Save**.
+5. **PA Schedule** (optional, off by default): enable if your team has a Promotion Analysis rotation. Provide the Confluence page URL containing the PA schedule table.
+
+6. **PR Review** (optional, off by default): enable if your team participates in cross-team PR review rotations. Provide the Confluence page URL and choose the duty weight (half day or full day).
+
+7. **Backlog Sprints**: select which backlog sprints to show (sprints without a start date, e.g. stretch goal or deferred backlog). These appear as additional sections you can drag tasks from.
+
+8. Click **Save**.
+
+> **Switching boards**: changing the board triggers a full UI refresh — all task rows are cleared, PA and PR schedules are re-fetched for the new board, and a warning is shown if absence data may be stale for the new sprint window.
 
 ### 5. Plan the sprint
 
@@ -96,8 +104,11 @@ All settings are stored in `team-config.json`:
 
 ```json
 {
+  "project_key": "FDATA",
   "board_id": 12345,
   "board_url": "https://your-jira.com/secure/RapidBoard.jspa?rapidView=12345",
+  "board_name": "Gemini",
+  "team_name": "Gemini",
   "team": ["Alice", "Bob", "Charlie"],
   "efficiency": {
     "default": 70,
@@ -115,8 +126,11 @@ All settings are stored in `team-config.json`:
 
 | Field | Description |
 |---|---|
-| `board_id` | Jira board ID (extracted from URL) |
+| `project_key` | Jira project key (e.g. `FDATA`) |
+| `board_id` | Jira board ID (set by the board picker in Settings) |
 | `board_url` | Full Jira board URL |
+| `board_name` | Jira board display name |
+| `team_name` | Value from the Jira Team field (`customfield_19700`); used to pre-select the Team dropdown in Settings |
 | `team` | Array of team member names |
 | `efficiency.default` | Default efficiency % for all members (typically 70) |
 | `efficiency.<name>` | Per-person override (e.g. 50 for part-time, 0 for fully allocated elsewhere) |

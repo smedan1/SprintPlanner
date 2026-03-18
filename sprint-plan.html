@@ -563,11 +563,31 @@
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 32px;">
       <!-- ═══ LEFT COLUMN ═══ -->
       <div>
-        <!-- Board URL -->
+        <!-- Jira Project -->
+        <div style="margin-bottom:12px;">
+          <label style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:#5e6c84;display:block;margin-bottom:6px;">Jira Project</label>
+          <input id="settings-project-key" type="text" placeholder="e.g. FDATA" style="width:100%;padding:8px 10px;border:1px solid #dfe1e6;border-radius:3px;font-size:13px;box-sizing:border-box;">
+        </div>
+
+        <!-- Team dropdown -->
+        <div style="margin-bottom:12px;">
+          <label style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:#5e6c84;display:block;margin-bottom:6px;">Team</label>
+          <select id="settings-team-select" style="width:100%;padding:8px 10px;border:1px solid #dfe1e6;border-radius:3px;font-size:13px;box-sizing:border-box;background:#fff;">
+            <option value="">— select a team —</option>
+          </select>
+          <div id="settings-team-select-status" style="margin-top:4px;font-size:12px;color:#5e6c84;min-height:16px;"></div>
+        </div>
+
+        <!-- Board Picker -->
         <div style="margin-bottom:20px;">
           <label style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:#5e6c84;display:block;margin-bottom:6px;">Jira Board</label>
-          <input id="settings-board-url" type="text" placeholder="https://jira.autodesk.com/secure/RapidBoard.jspa?rapidView=12345" style="width:100%;padding:8px 10px;border:1px solid #dfe1e6;border-radius:3px;font-size:13px;box-sizing:border-box;">
-          <div id="settings-board-id" style="margin-top:4px;font-size:12px;color:#5e6c84;"></div>
+          <div id="settings-board-selected" style="display:none;align-items:center;gap:8px;margin-bottom:6px;">
+            <span id="settings-board-selected-text" style="font-size:13px;color:#006644;font-weight:600;"></span>
+            <a href="#" id="settings-board-change" style="font-size:12px;color:#0052cc;text-decoration:none;" onclick="event.preventDefault();showBoardList();">Change</a>
+          </div>
+          <div id="settings-board-list" style="border:1px solid #dfe1e6;border-radius:3px;min-height:40px;max-height:160px;overflow-y:auto;font-size:13px;background:#fafbfc;">
+            <span style="color:#5e6c84;padding:8px 12px;display:block;">Type a board filter to search...</span>
+          </div>
         </div>
 
         <!-- Team Members -->
@@ -580,13 +600,6 @@
             <span style="color:#5e6c84;">Loading...</span>
           </div>
           <div id="settings-team-status" style="margin-top:4px;font-size:12px;color:#5e6c84;"></div>
-        </div>
-
-        <!-- Unscheduled Buffer -->
-        <div style="margin-bottom:20px;">
-          <label for="settings-buffer" style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:#5e6c84;display:block;margin-bottom:6px;">Default Unscheduled Buffer (SP)</label>
-          <input id="settings-buffer" type="number" min="0" step="0.5" value="5" style="width:80px;padding:8px 10px;border:1px solid #dfe1e6;border-radius:3px;font-size:13px;box-sizing:border-box;">
-          <div style="margin-top:4px;font-size:12px;color:#5e6c84;">Team-level reserve for unplanned work. Can be overridden per-session in the capacity summary.</div>
         </div>
 
         <!-- Backlog Sprints -->
@@ -610,6 +623,13 @@
           <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:#172b4d;cursor:pointer;">
             <input type="radio" name="pr-duty-weight" id="settings-pr-weight-full" value="1" style="margin:0;"> Full day (8h) per rotation
           </label>
+        </div>
+
+        <!-- Unscheduled Buffer -->
+        <div style="margin-bottom:24px;">
+          <label for="settings-buffer" style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:#5e6c84;display:block;margin-bottom:6px;">Default Unscheduled Buffer (SP)</label>
+          <input id="settings-buffer" type="number" min="0" step="0.5" value="5" style="width:80px;padding:8px 10px;border:1px solid #dfe1e6;border-radius:3px;font-size:13px;box-sizing:border-box;">
+          <div style="margin-top:4px;font-size:12px;color:#5e6c84;">Team-level reserve for unplanned work. Can be overridden per-session in the capacity summary.</div>
         </div>
 
         <div style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:#5e6c84;margin-bottom:16px;">Confluence Schedules</div>
@@ -658,6 +678,12 @@
 
   // Team config loaded from /api/config (populated during startup)
   var teamConfig = { team: [], efficiency: { 'default': 70 } };
+
+  // Board picker state
+  var boardPickerList = [];
+  var selectedBoardId = null;
+  var selectedBoardName = '';
+  var settingsBacklogPreview = null; // {id_str: name} when previewing a different board
 
   // pendingMoves: Map of issueKey → { issueKey, targetSprintId, originalSprintId, label }
   // Only stores net change vs. original sprint. Cleared out if user drags back to origin.
@@ -2532,18 +2558,24 @@
     overlay.style.display = 'flex';
     // Populate fields from current config
     var cfg = teamConfig;
-    document.getElementById('settings-board-url').value = cfg.board_url || '';
-    updateBoardIdDisplay();
+    selectedBoardId = cfg.board_id || null;
+    selectedBoardName = cfg.board_name || '';
+    settingsBacklogPreview = null;
+    updateBoardSelectedDisplay();
+    var projectKey = cfg.project_key || 'FDATA';
+    document.getElementById('settings-project-key').value = projectKey;
+    document.getElementById('settings-board-list').innerHTML = '<span style="color:#5e6c84;padding:8px 12px;display:block;">Select a team above to see boards</span>';
+    loadTeamDropdown(projectKey);
     renderSettingsTeamList(cfg.team || []);
     renderSettingsBacklogList();
     // PA toggle
     var paCb = document.getElementById('settings-pa-enabled');
-    paCb.checked = cfg.pa_enabled !== false;
+    paCb.checked = cfg.pa_enabled === true;
     document.getElementById('settings-pa-url').value = cfg.pa_confluence_url || '';
     document.getElementById('settings-pa-url-row').style.display = paCb.checked ? '' : 'none';
     // PR toggle
     var prCb = document.getElementById('settings-pr-enabled');
-    prCb.checked = cfg.pr_enabled !== false;
+    prCb.checked = cfg.pr_enabled === true;
     document.getElementById('settings-pr-url').value = cfg.pr_confluence_url || '';
     document.getElementById('settings-pr-url-row').style.display = prCb.checked ? '' : 'none';
     // PR duty weight
@@ -2564,24 +2596,160 @@
     document.getElementById('settings-overlay').style.display = 'none';
   };
 
-  function updateBoardIdDisplay() {
-    var url = document.getElementById('settings-board-url').value;
-    var el = document.getElementById('settings-board-id');
-    var m = url.match(/rapidView=(\d+)/);
-    if (m) {
-      el.textContent = 'Board ID: ' + m[1];
-      el.style.color = '#006644';
-    } else if (url.trim()) {
-      el.textContent = 'Could not extract board ID from URL';
-      el.style.color = '#bf2600';
+  function updateBoardSelectedDisplay() {
+    var el = document.getElementById('settings-board-selected');
+    if (selectedBoardId) {
+      document.getElementById('settings-board-selected-text').textContent =
+        '\u2713 ' + selectedBoardName + ' (ID: ' + selectedBoardId + ')';
+      el.style.display = 'flex';
+      document.getElementById('settings-board-list').style.display = 'none';
     } else {
-      el.textContent = '';
+      el.style.display = 'none';
+      document.getElementById('settings-board-list').style.display = '';
     }
   }
 
+  window.showBoardList = function() {
+    document.getElementById('settings-board-selected').style.display = 'none';
+    var list = document.getElementById('settings-board-list');
+    list.style.display = '';
+    // Re-trigger search to show current results
+    searchBoards();
+  };
+
+  function searchBoards() {
+    var container = document.getElementById('settings-board-list');
+    var teamSel = document.getElementById('settings-team-select');
+    var teamFilter = teamSel ? teamSel.value : '';
+    var projectFilter = document.getElementById('settings-project-key').value.trim();
+    if (!teamFilter) {
+      container.innerHTML = '<span style="color:#5e6c84;padding:8px 12px;display:block;">Select a team above to see boards</span>';
+      return;
+    }
+    container.innerHTML = '<span style="color:#5e6c84;padding:8px 12px;display:block;">Searching...</span>';
+    var params = 'name=' + encodeURIComponent(teamFilter);
+    if (projectFilter) params += '&project=' + encodeURIComponent(projectFilter);
+    fetch('http://localhost:5000/api/boards?' + params, { signal: AbortSignal.timeout(10000) })
+      .then(function(r) { return r.json(); })
+      .then(function(boards) {
+        boardPickerList = boards;
+        renderBoardList(boards);
+      })
+      .catch(function() {
+        container.innerHTML = '<span style="color:#bf2600;padding:8px 12px;display:block;">Failed to load boards</span>';
+      });
+  }
+
+  function renderBoardList(boards) {
+    var container = document.getElementById('settings-board-list');
+    if (boards.length === 0) {
+      container.innerHTML = '<span style="color:#5e6c84;padding:8px 12px;display:block;">No matching boards</span>';
+      return;
+    }
+    container.innerHTML = '';
+    boards.forEach(function(b) {
+      var div = document.createElement('div');
+      div.dataset.boardId = b.id;
+      div.dataset.boardName = b.name;
+      var isSel = b.id === selectedBoardId;
+      div.style.cssText = 'padding:6px 12px;cursor:pointer;' + (isSel ? 'background:#deebff;font-weight:600;' : '');
+      div.innerHTML = escHtml(b.name) + ' <span style="color:#5e6c84;font-size:11px;">(ID: ' + b.id + ')</span>';
+      div.addEventListener('mouseenter', function() { if (b.id !== selectedBoardId) this.style.background = '#f4f5f7'; });
+      div.addEventListener('mouseleave', function() { this.style.background = b.id === selectedBoardId ? '#deebff' : ''; });
+      div.addEventListener('click', function() {
+        selectedBoardId = b.id;
+        selectedBoardName = b.name;
+        updateBoardSelectedDisplay();
+        // Preview backlogs for the newly selected board
+        var bl = document.getElementById('settings-backlog-list');
+        bl.innerHTML = '<span style="color:#5e6c84;">Loading backlogs...</span>';
+        fetch('http://localhost:5000/api/board-sprints?board_id=' + b.id, { signal: AbortSignal.timeout(10000) })
+          .then(function(r) { return r.json(); })
+          .then(function(d) {
+            settingsBacklogPreview = d.backlog_sprints || {};
+            renderSettingsBacklogPreview();
+          })
+          .catch(function() {
+            bl.innerHTML = '<span style="color:#bf2600;">Failed to load backlogs</span>';
+          });
+      });
+      container.appendChild(div);
+    });
+    // Auto-select if exactly one board result
+    if (boards.length === 1) {
+      var b = boards[0];
+      selectedBoardId = b.id;
+      selectedBoardName = b.name;
+      updateBoardSelectedDisplay();
+      var bl = document.getElementById('settings-backlog-list');
+      bl.innerHTML = '<span style="color:#5e6c84;">Loading backlogs...</span>';
+      fetch('http://localhost:5000/api/board-sprints?board_id=' + b.id, { signal: AbortSignal.timeout(10000) })
+        .then(function(r) { return r.json(); })
+        .then(function(d) { settingsBacklogPreview = d.backlog_sprints || {}; renderSettingsBacklogPreview(); })
+        .catch(function() { bl.innerHTML = '<span style="color:#bf2600;">Failed to load backlogs</span>'; });
+      return;
+    }
+    // Scroll selected into view
+    if (selectedBoardId) {
+      var sel = container.querySelector('[data-board-id="' + selectedBoardId + '"]');
+      if (sel) sel.scrollIntoView({ block: 'nearest' });
+    }
+  }
+
+  function loadTeamDropdown(projectKey) {
+    var sel = document.getElementById('settings-team-select');
+    var status = document.getElementById('settings-team-select-status');
+    if (!sel) return;
+    sel.innerHTML = '<option value="">Loading...</option>';
+    sel.disabled = true;
+    if (status) status.textContent = '';
+    fetch('http://localhost:5000/api/project-teams?project=' + encodeURIComponent(projectKey),
+          { signal: AbortSignal.timeout(10000) })
+      .then(function(r) { return r.json(); })
+      .then(function(teams) {
+        sel.innerHTML = '<option value="">— select a team —</option>';
+        var autoSearch = false;
+        var currentTeam = (teamConfig && teamConfig.team_name) || selectedBoardName || (teamConfig && teamConfig.board_name) || '';
+        teams.forEach(function(t) {
+          var opt = document.createElement('option');
+          opt.value = t;
+          opt.textContent = t;
+          if (t === currentTeam) { opt.selected = true; autoSearch = true; }
+          sel.appendChild(opt);
+        });
+        sel.disabled = false;
+        if (status) status.textContent = teams.length ? '' : 'No teams found for this project';
+        if (autoSearch) searchBoards();
+      })
+      .catch(function() {
+        sel.innerHTML = '<option value="">— select a team —</option>';
+        sel.disabled = false;
+        if (status) status.textContent = 'Could not load teams';
+      });
+  }
+
+  var boardSearchTimer = null;
+
   document.addEventListener('DOMContentLoaded', function() {
-    var urlInput = document.getElementById('settings-board-url');
-    if (urlInput) urlInput.addEventListener('input', updateBoardIdDisplay);
+    var teamSel = document.getElementById('settings-team-select');
+    if (teamSel) teamSel.addEventListener('change', function() {
+      // Clear the current board selection so the board list becomes visible
+      // and backlogs refresh for the newly selected team
+      selectedBoardId = null;
+      selectedBoardName = '';
+      updateBoardSelectedDisplay();
+      searchBoards();
+    });
+    var projectInput = document.getElementById('settings-project-key');
+    if (projectInput) {
+      projectInput.addEventListener('input', function() {
+        clearTimeout(boardSearchTimer);
+        boardSearchTimer = setTimeout(function() {
+          var key = projectInput.value.trim();
+          if (key) loadTeamDropdown(key);
+        }, 400);
+      });
+    }
     // Wire sortable headers on sprint commitment table
     document.querySelectorAll('#sprint-commit-table th.sortable').forEach(wireSortableHeader);
   });
@@ -2633,6 +2801,33 @@
     });
   }
 
+  function renderSettingsBacklogPreview() {
+    var el = document.getElementById('settings-backlog-list');
+    var sprints = settingsBacklogPreview || {};
+    var ids = Object.keys(sprints).sort(function(a, b) {
+      return sprints[a].localeCompare(sprints[b]);
+    });
+    if (ids.length === 0) {
+      el.innerHTML = '<span style="color:#5e6c84;">No backlog sprints found</span>';
+      return;
+    }
+    el.innerHTML = '';
+    ids.forEach(function(id) {
+      var label = document.createElement('label');
+      label.style.cssText = 'display:flex;align-items:center;gap:8px;padding:3px 0;cursor:pointer;font-size:13px;';
+      var cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.checked = !!selectedBacklogs[id];
+      cb.dataset.sprintId = id;
+      cb.addEventListener('change', function() {
+        selectedBacklogs[id] = cb.checked;
+      });
+      label.appendChild(cb);
+      label.appendChild(document.createTextNode(sprints[id]));
+      el.appendChild(label);
+    });
+  }
+
   window.refreshTeamFromWorkday = function(btn) {
     btn.disabled = true;
     btn.textContent = 'Launching...';
@@ -2680,8 +2875,9 @@
           btn.disabled = false;
           btn.textContent = 'Refresh from Workday';
           pollTeamAttempts = 0;
-          // If team was just configured for the first time, trigger absence/PA checks
-          if (hadNoTeam && window.triggerAbsenceAndPAChecks) {
+          // If team was just configured for the first time and a board is already saved,
+          // trigger absence/PA checks. Skip if Settings is still open (board not yet saved).
+          if (hadNoTeam && window.triggerAbsenceAndPAChecks && teamConfig.board_id) {
             window.triggerAbsenceAndPAChecks();
           }
         } else {
@@ -2692,9 +2888,33 @@
   }
 
   window.saveSettings = function() {
-    var url = document.getElementById('settings-board-url').value.trim();
-    var m = url.match(/rapidView=(\d+)/);
-    var boardId = m ? parseInt(m[1]) : teamConfig.board_id;
+    var projectKey = document.getElementById('settings-project-key').value.trim() || 'FDATA';
+    var boardId = selectedBoardId || teamConfig.board_id;
+    var boardName = selectedBoardName || teamConfig.board_name || '';
+    var boardChanged = boardId !== teamConfig.board_id;
+
+    // If board changed and there are pending changes, confirm discard first
+    var hasPending = Object.keys(pendingMoves).length > 0 || Object.keys(pendingEdits).length > 0;
+    if (boardChanged && hasPending) {
+      showConfirm(
+        'Discard all pending changes?',
+        'Switching boards will discard all unsaved moves and edits. This cannot be undone.',
+        'Discard & Switch',
+        function() { doDiscardAll(); doSaveSettings(); }
+      );
+      return;
+    }
+    doSaveSettings();
+  };
+
+  function doSaveSettings() {
+    var projectKey = document.getElementById('settings-project-key').value.trim() || 'FDATA';
+    var boardId = selectedBoardId || teamConfig.board_id;
+    var boardName = selectedBoardName || teamConfig.board_name || '';
+    var boardChanged = boardId !== teamConfig.board_id;
+    var boardUrl = boardId
+      ? 'https://jira.autodesk.com/secure/RapidBoard.jspa?rapidView=' + boardId
+      : teamConfig.board_url || '';
     var paEnabled = document.getElementById('settings-pa-enabled').checked;
     var paUrl = document.getElementById('settings-pa-url').value.trim();
     var prEnabled = document.getElementById('settings-pr-enabled').checked;
@@ -2702,9 +2922,14 @@
     var prDutyWeight = document.getElementById('settings-pr-weight-full').checked ? 1 : 0.5;
     var bufferDefault = parseFloat(document.getElementById('settings-buffer').value);
     if (isNaN(bufferDefault) || bufferDefault < 0) bufferDefault = 5;
+    var teamNameSel = document.getElementById('settings-team-select');
+    var teamName = teamNameSel ? teamNameSel.value : '';
     var cfg = {
+      project_key: projectKey,
       board_id: boardId,
-      board_url: url,
+      board_url: boardUrl,
+      board_name: boardName,
+      team_name: teamName,
       pa_enabled: paEnabled,
       pa_confluence_url: paUrl,
       pr_enabled: prEnabled,
@@ -2724,20 +2949,37 @@
         var prWasOff = !teamConfig.pr_enabled;
         var prOldWeight = teamConfig.pr_duty_weight || 0.5;
         var prWeightChanged = prOldWeight !== prDutyWeight;
+        teamConfig.project_key = projectKey;
         teamConfig.board_id = boardId;
-        teamConfig.board_url = url;
+        teamConfig.board_url = boardUrl;
+        teamConfig.board_name = boardName;
+        teamConfig.team_name = teamName;
         teamConfig.pa_enabled = paEnabled;
         teamConfig.pa_confluence_url = paUrl;
         teamConfig.pr_enabled = prEnabled;
         teamConfig.pr_confluence_url = prUrl;
         teamConfig.pr_duty_weight = prDutyWeight;
         teamConfig.unscheduled_buffer = bufferDefault;
+        // Rebuild capacity rows if team members changed — must run before applyPA/PRVisibility
+        // so visibility is applied to the correct set of rows. No PA/PR guard here: rows must
+        // be built even when PA/PR is being enabled for the first time alongside the team.
+        if (!boardChanged) {
+          var newTeam = teamConfig.team || [];
+          var renderedPeople = new Set(
+            Array.from(document.querySelectorAll('[data-person]')).map(function(r) { return r.dataset.person; })
+          );
+          var hasNewMembers = newTeam.some(function(name) { return !renderedPeople.has(name); });
+          if (hasNewMembers) {
+            buildCapacityRows(newTeam, teamConfig.efficiency);
+            recomputeTeamCapacity();
+          }
+        }
         applyPAVisibility();
         applyPRVisibility();
         closeSettings();
         showToast('Settings saved', 'success');
-        // If PA was just re-enabled, refresh PA data
-        if (paEnabled && paWasOff) {
+        // If PA was just re-enabled (and board didn't change — board change handles its own PA refresh)
+        if (paEnabled && paWasOff && !boardChanged) {
           showToast('Refreshing PA schedule...', 'info');
           fetch('http://localhost:5000/api/pa-status', { signal: AbortSignal.timeout(10000) })
             .then(function(r) { return r.json(); })
@@ -2747,13 +2989,13 @@
               }
             })
             .then(function() {
-              return initSprintInfo().then(function() { refreshTasks(true); });
+              if (teamConfig.board_id) return initSprintInfo().then(function() { refreshTasks(true); });
             })
             .then(function() { showToast('PA schedule updated', 'success'); })
             .catch(function() { showToast('Could not refresh PA — try reloading', 'warn'); });
         }
-        // If PR was just re-enabled, fetch from Confluence first
-        if (prEnabled && prWasOff) {
+        // If PR was just re-enabled (and board didn't change — board change handles its own PR refresh)
+        if (prEnabled && prWasOff && !boardChanged) {
           showToast('Refreshing PR schedule...', 'info');
           fetch('http://localhost:5000/api/pr-status', { signal: AbortSignal.timeout(10000) })
             .then(function(r) { return r.json(); })
@@ -2761,7 +3003,7 @@
               if (!ps.fresh) return fetch('http://localhost:5000/api/fetch-pr', { signal: AbortSignal.timeout(15000) });
             })
             .then(function() {
-              return initSprintInfo().then(function() { refreshTasks(true); });
+              if (teamConfig.board_id) return initSprintInfo().then(function() { refreshTasks(true); });
             })
             .then(function() { showToast('PR schedule updated', 'success'); })
             .catch(function() { showToast('Could not refresh PR — try reloading', 'warn'); });
@@ -2780,20 +3022,220 @@
           document.querySelectorAll('[data-person]').forEach(function(row) { recomputeCapacity(row); });
           recomputeTeamCapacity();
         }
+        // Board changed — full UI refresh (sprint info, backlogs, tasks)
+        if (boardChanged) {
+          showToast('Board changed — refreshing...', 'info');
+
+          // ── 1. Purge all task state from previous board ──
+          // Clear sprint commitment rows
+          var commitBody2 = document.getElementById('sprint-commit-body');
+          commitBody2.innerHTML = '';
+          document.getElementById('sprint-commit-empty').style.display = '';
+          document.getElementById('sprint-commit-table').style.display = 'none';
+          // Clear all backlog section cards
+          document.getElementById('backlog-container').innerHTML = '';
+          // Reset accumulated sprint/backlog state
+          SPRINT_NAMES = {};
+          SPRINT_ID = null;
+          allBacklogs = {};
+          selectedBacklogs = {};
+          // Clear any pending changes left from old board
+          pendingMoves = {};
+          pendingEdits = {};
+          clearPendingStorage();
+          renderPendingPanel();
+
+          // ── 2. Save selected backlogs from the preview before refreshing ──
+          if (settingsBacklogPreview) {
+            var previewSelected = [];
+            document.querySelectorAll('#settings-backlog-list input[type="checkbox"]:checked').forEach(function(cb) {
+              previewSelected.push(cb.dataset.sprintId);
+            });
+            fetch('http://localhost:5000/api/backlog-prefs', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ selected: previewSelected })
+            }).catch(function() {});
+          }
+
+          // ── 3. Re-fetch PA and PR schedules for new board/sprint window ──
+          var scheduleRefreshes = [];
+          if (paEnabled) {
+            scheduleRefreshes.push(
+              fetch('http://localhost:5000/api/fetch-pa', { signal: AbortSignal.timeout(20000) })
+                .then(function(r) {
+                  if (!r.ok) return r.json().catch(function() { return {}; }).then(function(b) {
+                    showToast('PA schedule fetch failed: ' + (b.error || 'HTTP ' + r.status), 'warn');
+                  });
+                })
+                .catch(function(e) { showToast('PA schedule fetch failed: ' + e.message, 'warn'); })
+            );
+          }
+          if (prEnabled) {
+            scheduleRefreshes.push(
+              fetch('http://localhost:5000/api/fetch-pr', { signal: AbortSignal.timeout(20000) })
+                .then(function(r) {
+                  if (!r.ok) return r.json().catch(function() { return {}; }).then(function(b) {
+                    showToast('PR schedule fetch failed: ' + (b.error || 'HTTP ' + r.status), 'warn');
+                  });
+                })
+                .catch(function(e) { showToast('PR schedule fetch failed: ' + e.message, 'warn'); })
+            );
+          }
+
+          Promise.all(scheduleRefreshes)
+            .then(function() { return initSprintInfo(); })
+            .then(function() { return refreshTasks(true); })
+            .then(function() {
+              showToast('Board switched successfully', 'success');
+              showToast('⚠ Absence data may be stale for new sprint — refresh from Workday if needed', 'warn');
+            })
+            .catch(function() { showToast('Refresh failed — try reloading', 'warn'); });
+        }
       } else {
         showToast('Save failed: ' + (d.error || 'unknown'), 'error');
       }
     })
-    .catch(function() {
-      showToast('Could not save settings - server unreachable', 'error');
+    .catch(function(err) {
+      console.error('saveSettings error:', err);
+      showToast('Could not save settings: ' + (err.message || 'server unreachable'), 'error');
     });
-  };
+  }
 
   // Close modal on overlay click (outside the dialog)
   document.addEventListener('click', function(e) {
     var overlay = document.getElementById('settings-overlay');
     if (e.target === overlay) closeSettings();
   });
+
+  // ── Sprint info initializer (global so settings save can call it) ──
+  function initSprintInfo() {
+    return fetch('http://localhost:5000/api/sprint-info')
+      .then(function(r) {
+        if (!r.ok) return r.json().catch(function() { return {}; }).then(function(body) {
+          var err = new Error('HTTP ' + r.status);
+          err.hint = body.hint || body.error || null;
+          throw err;
+        });
+        return r.json();
+      })
+      .then(function(data) {
+        // Store team config for use elsewhere (e.g. assignee dropdowns)
+        if (data.team) teamConfig.team = data.team;
+        if (data.efficiency) teamConfig.efficiency = data.efficiency;
+        if ('pa_enabled' in data) teamConfig.pa_enabled = data.pa_enabled;
+        if ('pa_confluence_url' in data) teamConfig.pa_confluence_url = data.pa_confluence_url;
+        if ('pr_enabled' in data) teamConfig.pr_enabled = data.pr_enabled;
+        if ('pr_confluence_url' in data) teamConfig.pr_confluence_url = data.pr_confluence_url;
+        if ('pr_duty_weight' in data) teamConfig.pr_duty_weight = data.pr_duty_weight;
+        if ('unscheduled_buffer' in data) {
+          teamConfig.unscheduled_buffer = data.unscheduled_buffer;
+          var bi = document.getElementById('buffer-input');
+          if (bi) bi.value = data.unscheduled_buffer;
+        }
+
+        // Build capacity table rows from team config
+        buildCapacityRows(data.team || teamConfig.team, data.efficiency || teamConfig.efficiency);
+
+        // Set sprint state
+        SPRINT_ID = data.sprint_id;
+        SPRINT_NAMES[data.sprint_id] = data.sprint_name;
+        Object.keys(data.backlog_sprints).forEach(function(id) {
+          SPRINT_NAMES[parseInt(id)] = data.backlog_sprints[id];
+        });
+
+        // Update page headers
+        document.title = 'Sprint Capacity \u2014 ' + data.sprint_name;
+        document.getElementById('page-title').textContent = 'Sprint Capacity Plan \u2014 ' + data.sprint_name;
+
+        // Format dates for display
+        var s = new Date(data.start_date + 'T00:00:00');
+        var e = new Date(data.end_date + 'T00:00:00');
+        e.setDate(e.getDate() - 1); // end_date is exclusive, show last working day
+        var months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+        var dateStr = months[s.getMonth()] + ' ' + s.getDate() + ' \u2013 ' + months[e.getMonth()] + ' ' + e.getDate() + ', ' + s.getFullYear();
+        document.getElementById('meta-dates').textContent = '\uD83D\uDCC5 ' + dateStr;
+        document.getElementById('meta-working-days').textContent = '\u23F1 ' + data.working_days + ' working days';
+        // Store detail data for person expand rows
+        window._sprintDetail = {
+          absences: data.absence_detail || {},
+          pa: data.pa_detail || {},
+          pr: data.pr_detail || {},
+        };
+
+        var hCount = data.holidays_in_sprint.length;
+        var hNames = data.holidays_in_sprint.map(function(h) { return h.name; });
+        var hText = hCount === 0 ? '0 holidays' : hCount + ' holiday' + (hCount > 1 ? 's' : '') + ': ' + hNames.join(', ');
+        document.getElementById('meta-holidays').textContent = '\uD83C\uDFD6 ' + hText;
+
+        // Capacity card subtitle: working days + holidays
+        var capNote = document.getElementById('capacity-holidays-note');
+        if (capNote) {
+          var wd = data.working_days + ' working days';
+          capNote.textContent = hCount > 0
+            ? wd + ' · ' + hCount + ' holiday' + (hCount > 1 ? 's' : '') + ': ' + hNames.join(', ')
+            : wd + ' · No holidays';
+          capNote.style.display = '';
+        }
+        // AVAIL column tooltip with holiday detail
+        var availTh = document.querySelector('th[title*="Working days minus"]');
+        if (availTh) {
+          var totalWeekdays = data.working_days + hCount;
+          var tip = data.working_days + ' working days (' + totalWeekdays + ' weekdays';
+          if (hCount > 0) tip += ' \u2212 ' + hCount + ' holidays: ' + hNames.join(', ');
+          tip += ') minus deductions';
+          availTh.title = tip;
+        }
+
+        // Update sprint commitment header + tbody
+        document.getElementById('sprint-commit-title').textContent = 'Sprint Commitment \u2014 ' + data.sprint_name;
+        var commitBody = document.getElementById('sprint-commit-body');
+        if (commitBody) commitBody.dataset.sprintId = data.sprint_id;
+
+        // Set working days, absences, and PA on each person row
+        document.querySelectorAll('[data-person]').forEach(function(row) {
+          row.dataset.workingDays = data.working_days;
+          var absInput = row.querySelector('.deduct-input[data-col="absence"]');
+          if (absInput) {
+            var personAbsence = data.absences[row.dataset.person] || 0;
+            absInput.value = personAbsence;
+            toggleHasValue(absInput);
+          }
+          if (data.pa && teamConfig.pa_enabled !== false) {
+            var paInput = row.querySelector('.deduct-input[data-col="pa"]');
+            if (paInput) {
+              var personPA = data.pa[row.dataset.person] || 0;
+              paInput.value = personPA;
+              toggleHasValue(paInput);
+            }
+          }
+          if (data.pr && teamConfig.pr_enabled !== false) {
+            var prInput = row.querySelector('.deduct-input[data-col="pr"]');
+            if (prInput) {
+              var personPR = data.pr[row.dataset.person] || 0;
+              prInput.value = personPR;
+              toggleHasValue(prInput);
+            }
+          }
+          recomputeCapacity(row);
+        });
+        recomputeTeamCapacity();
+        applyPAVisibility();
+        applyPRVisibility();
+        // Initialize backlog sections from prefs
+        return initBacklogs(data.backlog_sprints);
+      })
+      .catch(function(err) {
+        console.error('initSprintInfo failed:', err);
+        var msg = err.hint || 'Sprint detection failed \u2014 using defaults';
+        showToast(msg, 'error');
+        // Recompute with defaults so numbers aren't all 0
+        document.querySelectorAll('[data-person]').forEach(function(row) {
+          recomputeCapacity(row);
+        });
+        recomputeTeamCapacity();
+      });
+  }
 
   // ── Startup service check ──
   (function startupCheck() {
@@ -2821,126 +3263,6 @@
       icon.style.color = state === 'ok' ? '#006644' : state === 'err' ? '#bf2600' : '#5e6c84';
       hint.textContent = msg;
       hint.className = 'svc-hint' + (state === 'err' ? ' err' : '');
-    }
-
-    function initSprintInfo() {
-      return fetch('http://localhost:5000/api/sprint-info')
-        .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
-        .then(function(data) {
-          // Store team config for use elsewhere (e.g. assignee dropdowns)
-          if (data.team) teamConfig.team = data.team;
-          if (data.efficiency) teamConfig.efficiency = data.efficiency;
-          if ('pa_enabled' in data) teamConfig.pa_enabled = data.pa_enabled;
-          if ('pa_confluence_url' in data) teamConfig.pa_confluence_url = data.pa_confluence_url;
-          if ('pr_enabled' in data) teamConfig.pr_enabled = data.pr_enabled;
-          if ('pr_confluence_url' in data) teamConfig.pr_confluence_url = data.pr_confluence_url;
-          if ('pr_duty_weight' in data) teamConfig.pr_duty_weight = data.pr_duty_weight;
-          if ('unscheduled_buffer' in data) {
-            teamConfig.unscheduled_buffer = data.unscheduled_buffer;
-            var bi = document.getElementById('buffer-input');
-            if (bi) bi.value = data.unscheduled_buffer;
-          }
-
-          // Build capacity table rows from team config
-          buildCapacityRows(data.team || teamConfig.team, data.efficiency || teamConfig.efficiency);
-
-          // Set sprint state
-          SPRINT_ID = data.sprint_id;
-          SPRINT_NAMES[data.sprint_id] = data.sprint_name;
-          Object.keys(data.backlog_sprints).forEach(function(id) {
-            SPRINT_NAMES[parseInt(id)] = data.backlog_sprints[id];
-          });
-
-          // Update page headers
-          document.title = 'Sprint Capacity \u2014 ' + data.sprint_name;
-          document.getElementById('page-title').textContent = 'Sprint Capacity Plan \u2014 ' + data.sprint_name;
-
-          // Format dates for display
-          var s = new Date(data.start_date + 'T00:00:00');
-          var e = new Date(data.end_date + 'T00:00:00');
-          e.setDate(e.getDate() - 1); // end_date is exclusive, show last working day
-          var months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-          var dateStr = months[s.getMonth()] + ' ' + s.getDate() + ' \u2013 ' + months[e.getMonth()] + ' ' + e.getDate() + ', ' + s.getFullYear();
-          document.getElementById('meta-dates').textContent = '\uD83D\uDCC5 ' + dateStr;
-          document.getElementById('meta-working-days').textContent = '\u23F1 ' + data.working_days + ' working days';
-          // Store detail data for person expand rows
-          window._sprintDetail = {
-            absences: data.absence_detail || {},
-            pa: data.pa_detail || {},
-            pr: data.pr_detail || {},
-          };
-
-          var hCount = data.holidays_in_sprint.length;
-          var hNames = data.holidays_in_sprint.map(function(h) { return h.name; });
-          var hText = hCount === 0 ? '0 holidays' : hCount + ' holiday' + (hCount > 1 ? 's' : '') + ': ' + hNames.join(', ');
-          document.getElementById('meta-holidays').textContent = '\uD83C\uDFD6 ' + hText;
-
-          // Capacity card subtitle: working days + holidays
-          var capNote = document.getElementById('capacity-holidays-note');
-          if (capNote) {
-            var wd = data.working_days + ' working days';
-            capNote.textContent = hCount > 0
-              ? wd + ' · ' + hCount + ' holiday' + (hCount > 1 ? 's' : '') + ': ' + hNames.join(', ')
-              : wd + ' · No holidays';
-            capNote.style.display = '';
-          }
-          // AVAIL column tooltip with holiday detail
-          var availTh = document.querySelector('th[title*="Working days minus"]');
-          if (availTh) {
-            var totalWeekdays = data.working_days + hCount;
-            var tip = data.working_days + ' working days (' + totalWeekdays + ' weekdays';
-            if (hCount > 0) tip += ' \u2212 ' + hCount + ' holidays: ' + hNames.join(', ');
-            tip += ') minus deductions';
-            availTh.title = tip;
-          }
-
-          // Update sprint commitment header + tbody
-          document.getElementById('sprint-commit-title').textContent = 'Sprint Commitment \u2014 ' + data.sprint_name;
-          var commitBody = document.getElementById('sprint-commit-body');
-          if (commitBody) commitBody.dataset.sprintId = data.sprint_id;
-
-          // Set working days, absences, and PA on each person row
-          document.querySelectorAll('[data-person]').forEach(function(row) {
-            row.dataset.workingDays = data.working_days;
-            var absInput = row.querySelector('.deduct-input[data-col="absence"]');
-            if (absInput) {
-              var personAbsence = data.absences[row.dataset.person] || 0;
-              absInput.value = personAbsence;
-              toggleHasValue(absInput);
-            }
-            if (data.pa && teamConfig.pa_enabled !== false) {
-              var paInput = row.querySelector('.deduct-input[data-col="pa"]');
-              if (paInput) {
-                var personPA = data.pa[row.dataset.person] || 0;
-                paInput.value = personPA;
-                toggleHasValue(paInput);
-              }
-            }
-            if (data.pr && teamConfig.pr_enabled !== false) {
-              var prInput = row.querySelector('.deduct-input[data-col="pr"]');
-              if (prInput) {
-                var personPR = data.pr[row.dataset.person] || 0;
-                prInput.value = personPR;
-                toggleHasValue(prInput);
-              }
-            }
-            recomputeCapacity(row);
-          });
-          recomputeTeamCapacity();
-          applyPAVisibility();
-          applyPRVisibility();
-          // Initialize backlog sections from prefs
-          return initBacklogs(data.backlog_sprints);
-        })
-        .catch(function(err) {
-          console.error('initSprintInfo failed:', err);
-          showToast('Sprint detection failed \u2014 using defaults', 'error');
-          // Recompute with defaults so numbers aren't all 0
-          document.querySelectorAll('[data-person]').forEach(function(row) {
-            recomputeCapacity(row);
-          });
-          recomputeTeamCapacity();
-        });
     }
 
     var initialLoadDone = false;
