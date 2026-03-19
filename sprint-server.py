@@ -368,6 +368,30 @@ def _sp_to_estimate(sp: float | None) -> str:
     return f'{hours}h'
 
 
+def _parse_estimate_to_sp(estimate_str: str, fallback_secs: int) -> float:
+    """Parse Jira estimate string (e.g. '3d', '3d 4h', '4h') to SP (1 SP = 1 day).
+    Uses the string to avoid dependency on Jira's hours-per-day config.
+    Falls back to seconds / 21600 (6h workday) if parsing fails."""
+    if estimate_str:
+        days = 0.0
+        m = re.search(r'(\d+(?:\.\d+)?)\s*[wW]', estimate_str)
+        if m:
+            days += float(m.group(1)) * 5
+        m = re.search(r'(\d+(?:\.\d+)?)\s*[dD]', estimate_str)
+        if m:
+            days += float(m.group(1))
+        m = re.search(r'(\d+(?:\.\d+)?)\s*[hH]', estimate_str)
+        if m:
+            days += float(m.group(1)) / 8  # 8h per SP regardless of Jira config
+        m = re.search(r'(\d+(?:\.\d+)?)\s*[mM]', estimate_str)
+        if m:
+            days += float(m.group(1)) / 480  # 480 min = 8h
+        if days > 0:
+            return round(days, 1)
+    # Fallback: Jira instance uses 6h workdays (21600s/day)
+    return round(fallback_secs / 21600, 1) if fallback_secs > 0 else 0
+
+
 def get_time_spent(issue_key: str) -> int:
     """Returns timeSpentSeconds for the issue. Returns 0 on error or no logged work."""
     req = urllib.request.Request(
@@ -1129,6 +1153,86 @@ def check_pr_freshness() -> dict:
     return {**base, 'fresh': True, 'age_hours': round(age_hours, 1)}
 
 
+def get_active_sprint(board_id: int) -> dict | None:
+    """Fetch the active sprint for a board. Returns the sprint dict or None."""
+    if not board_id:
+        return None
+    req = urllib.request.Request(
+        f'{JIRA_URL}/rest/agile/1.0/board/{board_id}/sprint?state=active',
+        method='GET',
+        headers={'Authorization': f'Bearer {JIRA_TOKEN}'}
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            sprints = json.loads(resp.read().decode('utf-8')).get('values', [])
+        if not sprints:
+            return None
+        # If multiple active sprints, prefer the one matching the board name
+        board_name = get_board_name().lower()
+        for s in sprints:
+            if board_name and board_name in s.get('name', '').lower():
+                return s
+        return sprints[0]
+    except Exception as e:
+        print(f'  x Failed to fetch active sprint: {e}')
+        return None
+
+
+def get_spillover_for_sprint(sprint_id: int, team: list[str]) -> tuple[dict, dict]:
+    """Fetch incomplete issues from a sprint and compute remaining work per team member.
+    Returns (spillover, spillover_detail) where:
+      spillover = {person: total_sp}
+      spillover_detail = {person: {sp: total, tasks: [{key, summary, remaining_sp}]}}
+    """
+    params = urllib.parse.urlencode({
+        'jql': f'sprint = {sprint_id} ORDER BY created ASC',
+        'fields': 'assignee,status,timetracking,summary,customfield_10130',
+        'maxResults': 500,
+    })
+    req = urllib.request.Request(
+        f'{JIRA_URL}/rest/api/2/search?{params}',
+        method='GET',
+        headers={'Content-Type': 'application/json', 'Authorization': f'Bearer {JIRA_TOKEN}'}
+    )
+    spillover: dict[str, float] = {}
+    detail: dict[str, dict] = {}
+    try:
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            body = json.loads(resp.read().decode('utf-8'))
+        team_set = set(team)
+        for issue in body.get('issues', []):
+            fields = issue.get('fields', {})
+            status_name = (fields.get('status') or {}).get('name', '')
+            if status_name.lower() in ('closed', 'resolved', 'done'):
+                continue
+            assignee = (fields.get('assignee') or {}).get('displayName', '')
+            if not assignee or assignee not in team_set:
+                continue
+            tt = fields.get('timetracking') or {}
+            remaining_secs = tt.get('remainingEstimateSeconds') or 0
+            if remaining_secs <= 0:
+                continue
+            # Convert to SP using Jira's remainingEstimate string to get days
+            # directly, since Jira's seconds-per-day varies by instance (6h here).
+            # Parse "Xd Yh" format; fall back to seconds / SECS_PER_DAY.
+            remaining_sp = _parse_estimate_to_sp(tt.get('remainingEstimate', ''), remaining_secs)
+            if remaining_sp <= 0:
+                continue
+            spillover[assignee] = round(spillover.get(assignee, 0) + remaining_sp, 1)
+            if assignee not in detail:
+                detail[assignee] = {'sp': 0, 'tasks': []}
+            detail[assignee]['sp'] = round(detail[assignee]['sp'] + remaining_sp, 1)
+            detail[assignee]['tasks'].append({
+                'key': issue['key'],
+                'summary': fields.get('summary', ''),
+                'remaining_sp': remaining_sp,
+            })
+        print(f'  > Spillover from sprint {sprint_id}: {spillover}')
+    except Exception as e:
+        print(f'  x Failed to fetch spillover: {e}')
+    return spillover, detail
+
+
 def get_future_sprint_info(board_id: int) -> tuple[dict | None, dict]:
     """Fetch future sprints from Jira Agile API.
     Returns (sprint_to_plan, backlog_sprints_map).
@@ -1509,6 +1613,11 @@ class Handler(BaseHTTPRequestHandler):
             pr_data = load_pr_schedule()
             pr = {name: pr_data.get(name, 0) for name in team}
             pr_full = load_pr_schedule_full()
+            # Spillover from active sprint
+            active = get_active_sprint(get_board_id())
+            spill_data, spill_detail = ({}, {})
+            if active:
+                spill_data, spill_detail = get_spillover_for_sprint(active['id'], team)
             print(f'  > Sprint info: {sprint["name"]} ({start_str} to {end_str}), {working_days} working days')
             self._respond(200, {
                 'sprint_id': sprint['id'],
@@ -1523,6 +1632,9 @@ class Handler(BaseHTTPRequestHandler):
                 'pa_detail': {name: pa_full.get(name, {'days': 0, 'dates': []}) for name in team},
                 'pr': pr,
                 'pr_detail': {name: pr_full.get(name, {'days': 0, 'dates': []}) for name in team},
+                'spillover': {name: spill_data.get(name, 0) for name in team},
+                'spillover_detail': {name: spill_detail.get(name, {'sp': 0, 'tasks': []}) for name in team},
+                'active_sprint_name': active['name'] if active else '',
                 'backlog_sprints': backlog,
                 'team': team,
                 'efficiency': get_efficiency_map(),

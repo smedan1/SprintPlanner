@@ -9,7 +9,7 @@ Pulls the upcoming sprint from Jira, cross-references team availability (absence
 ## Capacity Formula
 
 ```
-Sprint Capacity (per person) = (Working Days × Efficiency %) - Deductions
+Sprint Capacity (per person) = (Working Days - Deductions) × Efficiency %
 
 Team Net Capacity (SP) = Sum of individual capacities - Unscheduled buffer
 ```
@@ -33,6 +33,7 @@ Efficiency is also editable directly in the capacity table UI and auto-saved to 
 - **Training**: learning & development time
 - **PA (Promotion Analysis)**: optional; 1-day duty monitoring the staging build for promotion decisions. Enabled/disabled per team in settings.
 - **PR (Pull Request Review)**: optional; cross-team PR review rotation duty. Deduction per rotation is configurable: half day (0.5, default) or full day (1.0) via Settings > PR Duty Weight. Schedule read from Confluence. Enabled/disabled per team in settings.
+- **Spillover**: remaining work from the current (active) sprint that will carry over. Read-only, computed from Jira `timetracking.remainingEstimateSeconds` on incomplete issues in the active sprint. Conversion: 1 SP = 8h (28800s). Only counts issues assigned to team members. Shown in person detail view with task-level breakdown.
 - **KTLO**: Keep The Lights On — operational/maintenance work
 - **Unscheduled**: team-level buffer for mid-sprint critical priority unplanned work; default **5 SP per sprint**
 - **Headroom**: Gross Capacity − Committed SP. Includes the unscheduled buffer (i.e. when committed = net available, headroom = buffer). Progress bar fills relative to Net Available; green ≤90%, amber 90–100% or eating into buffer, red when exceeding gross.
@@ -118,6 +119,7 @@ Settings are managed via the gear icon in the UI header. On first run with no te
 3. The sprint to plan's `start_date` and `end_date` define the window. **`end_date` is exclusive** (first day of next sprint). Working days = Mon–Fri within `[start_date, end_date)` = typically 10 days
 4. Use the sprint-to-plan's ID to pull its issues; also pull from selected backlog sprints
 5. If no future sprint has a `startDate`, the server returns HTTP 404 with the hint: "Add a start date to the next sprint in Jira for &lt;board&gt;"
+6. The **active sprint** (`state=active`) is fetched for spillover calculation — incomplete issues with `remainingEstimate` are summed per team member and shown as a read-only deduction column
 
 ## Holiday List
 
@@ -157,7 +159,8 @@ Stored in `holidays-ca-qc.json`. Covers Canada + Quebec holidays for **2026**.
 - **Epic expansion**: click an epic row to expand it inline and see its child tasks (fetched from Jira via `/api/epic-children`). Children show which sprint they belong to via a pill badge. All children are draggable and have a right-click context menu to move them to any section. Children are read-only (edit from their backlog row). Expanded epics collapse on page reload or Discard All. Child rows have a faint purple tint and left border for visual distinction.
 - **Editable Assignee**: dropdown restricted to team members
 - **Editable Priority**: custom dropdown with Jira priority icons (Showstopper, Critical, Major, Minor, None)
-- **Person detail view**: click a person's name in the capacity table to expand an inline detail row showing vacation date ranges, PA/PR schedule dates, and committed tasks. Updates dynamically when tasks are moved, reassigned, SP edited, tasks refreshed from Jira, or changes discarded
+- **Spillover column**: read-only deduction showing remaining work from the active (current) sprint per person. Computed from Jira `timetracking.remainingEstimate` on incomplete issues. Parsed from the estimate string (e.g. "3d" → 3.0 SP) to avoid dependency on Jira's hours-per-day config.
+- **Person detail view**: click a person's name in the capacity table to expand an inline detail row showing vacation date ranges, PA/PR schedule dates, spillover tasks (with remaining SP per task), and committed tasks. Updates dynamically when tasks are moved, reassigned, SP edited, tasks refreshed from Jira, or changes discarded
 - **Holiday display**: capacity card subtitle shows working days and holiday names in the sprint; AVAIL column tooltip shows full breakdown (weekdays − holidays)
 - **Editable Efficiency %**: per-person, recalculates capacity in real time, auto-saved to config
 - **Editable Unscheduled Buffer**: team-level buffer, recalculates net capacity in real time

@@ -145,13 +145,15 @@ All settings are stored in `team-config.json`:
 ## Capacity Formula
 
 ```
-Person Capacity = (Working Days x Efficiency%) - Absence - Events - Hackathon - Training - PA - PR - KTLO
+Available Days = Working Days - Deductions (Absence, PA, PR, KTLO, Events, Hackathon, Training, Spillover)
+Person Capacity = Available Days × Efficiency%
 Team Net Capacity = Sum of person capacities - Unscheduled buffer
 ```
 
 - **Working Days**: Mon-Fri in the sprint window (typically 10 for a 2-week sprint), minus holidays. Holidays in the sprint are shown in the capacity card subtitle and in the AVAIL column tooltip.
+- **Deductions**: subtracted from working days before efficiency is applied. Includes absences, PA/PR duties, KTLO, events, hackathon, training, and spillover.
+- **Spillover**: remaining work from the current (active) sprint that will carry over. Read-only column computed from Jira `timetracking.remainingEstimate` on incomplete issues assigned to team members. Click a person's name to see the individual spillover tasks.
 - **Efficiency %**: what fraction of available time goes to sprint work (default 70%)
-- **Deductions**: subtracted after efficiency is applied (1 day of vacation = 1 full day deducted)
 - **SP=0**: special value meaning 4h of work; counts as 0.5 SP in capacity math (display still shows "0")
 - **Unscheduled buffer**: team-level reserve for unplanned work (default 5 SP)
 - **Headroom**: Gross Capacity minus Committed SP — shows how much total capacity remains uncommitted, including the unscheduled buffer. The progress bar fills relative to Net Available; green up to 90%, amber 90–100%, amber when eating into buffer, red when exceeding gross.

@@ -43,6 +43,7 @@
   tr:hover td { background: #f8f9fa; }
   td.num { text-align: right; font-variant-numeric: tabular-nums; }
   th.num { text-align: right; }
+  .pa-col, .pr-col { width: 32px; padding-left: 4px; padding-right: 4px; }
   td.capacity { text-align: right; font-weight: 700; font-size: 15px; }
   td.zero { color: #bf2600; }
   td.low  { color: #ff8b00; }
@@ -60,7 +61,10 @@
   .detail-dates .dlabel { color: #6b778c; display: inline-block; min-width: 50px; }
   .detail-dates .none { color: #97a0af; font-style: italic; }
   .detail-tasks { grid-column: 1 / -1; margin-top: 4px; }
-  .detail-tasks table { width: 100%; font-size: 12px; border-collapse: collapse; }
+  .detail-tasks table { width: 100%; font-size: 12px; border-collapse: collapse; table-layout: fixed; }
+  .detail-tasks td:first-child { width: 110px; white-space: nowrap; }
+  .detail-tasks td:nth-child(2) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .detail-tasks td:last-child, .detail-tasks th:last-child { width: 90px; }
   .detail-tasks th { text-align: left; font-weight: 600; font-size: 11px; text-transform: uppercase; color: #6b778c; padding: 2px 8px 4px 0; }
   .detail-tasks th:last-child { text-align: right; }
   .detail-tasks td { padding: 3px 8px 3px 0; }
@@ -239,6 +243,8 @@
   .deduct-input:focus { border-bottom-color: #0052cc; }
   .deduct-input::-webkit-inner-spin-button, .deduct-input::-webkit-outer-spin-button { -webkit-appearance: none; }
   .deduct-input.has-value { background: #fff3cd; font-weight: 700; }
+  .spillover-col .deduct-input[readonly] { background: #f4f5f7; color: #5e6c84; cursor: default; border-color: transparent; }
+  .spillover-col .deduct-input[readonly].has-value { background: #fff3cd; color: #172b4d; font-weight: 700; }
 
   /* Editable buffer input styled as stat value */
   .val-input {
@@ -419,6 +425,7 @@
           <th class="num" title="Team events and demos that take time away from sprint work">Events</th>
           <th class="num" title="Company hackathon days">Hack.</th>
           <th class="num" title="Learning & development time">Training</th>
+          <th class="num spillover-col" title="Remaining work from the current (active) sprint that will spill over">Spill.</th>
           <th class="num" title="Working days minus all deductions">Avail</th>
           <th class="num" title="Percentage of available time spent on sprint work">Eff%</th>
           <th class="num" title="Calculated capacity in story points">Cap (SP)</th>
@@ -436,6 +443,7 @@
           <td class="num" id="total-events">0</td>
           <td class="num" id="total-hack">0</td>
           <td class="num" id="total-training">0</td>
+          <td class="num spillover-col" id="total-spillover">0</td>
           <td class="num" id="total-avail">80.0</td>
           <td class="num">—</td>
           <td class="num capacity" id="total-capacity">35.9</td>
@@ -742,7 +750,7 @@
     if (isNaN(eff) || eff < 0) eff = 0;
     if (eff > 100) eff = 100;
     input.value = eff;
-    var cap = Math.max(0, Math.round((workingDays * eff / 100 - deductions) * 10) / 10);
+    var cap = Math.max(0, Math.round(avail * eff / 100 * 10) / 10);
     var cell = row.querySelector('.person-capacity');
     cell.textContent = cap.toFixed(1);
     cell.className = 'num capacity person-capacity ' + (cap === 0 ? 'zero' : cap < 3 ? 'low' : 'full');
@@ -750,7 +758,7 @@
 
   function recomputeTeamCapacity() {
     var total = 0;
-    var totals = { absence:0, pa:0, pr:0, ktlo:0, events:0, hack:0, training:0 };
+    var totals = { absence:0, pa:0, pr:0, ktlo:0, events:0, hack:0, training:0, spillover:0 };
     var totalAvail = 0;
     document.querySelectorAll('[data-person]').forEach(function (row) {
       total += parseFloat(row.querySelector('.person-capacity').textContent) || 0;
@@ -763,7 +771,7 @@
     document.getElementById('total-capacity').textContent = total.toFixed(1);
     document.getElementById('stat-gross').textContent = total.toFixed(1);
     // Update total row deduction cells
-    ['absence','pa','pr','ktlo','events','hack','training'].forEach(function(col) {
+    ['absence','pa','pr','ktlo','events','hack','training','spillover'].forEach(function(col) {
       var el = document.getElementById('total-' + col);
       if (el) el.textContent = totals[col] > 0 ? totals[col].toFixed(1) : '0';
     });
@@ -817,7 +825,7 @@
   }
 
   // ── Person detail expand row ──
-  window._sprintDetail = { absences: {}, pa: {}, pr: {} };
+  window._sprintDetail = { absences: {}, pa: {}, pr: {}, spillover: {}, activeSprintName: '' };
 
   function fmtDetailDate(isoStr) {
     var d = new Date(isoStr + 'T00:00:00');
@@ -946,6 +954,25 @@
     }
     html += '</div>';
 
+    // Spillover from active sprint
+    var spillInfo = detail.spillover[name] || { sp: 0, tasks: [] };
+    var spillTasks = spillInfo.tasks || [];
+    var activeLabel = detail.activeSprintName ? ' (' + detail.activeSprintName + ')' : '';
+    html += '<div class="detail-tasks"><h4>Spillover' + activeLabel + (spillTasks.length > 0 ? ' \u2014 ' + spillTasks.length + ' tasks' : '') + '</h4>';
+    if (spillTasks.length > 0) {
+      html += '<table><thead><tr><th>Key</th><th>Summary</th><th style="text-align:right">Remaining SP</th></tr></thead><tbody>';
+      spillTasks.forEach(function(t) {
+        html += '<tr><td><a href="https://jira.autodesk.com/browse/' + t.key + '" target="_blank">' + t.key + '</a></td>';
+        html += '<td>' + escHtml(t.summary) + '</td>';
+        html += '<td style="text-align:right">' + t.remaining_sp.toFixed(1) + '</td></tr>';
+      });
+      html += '</tbody><tfoot><tr><td colspan="2" style="text-align:right;font-weight:600">Total</td>';
+      html += '<td style="font-weight:600">' + spillInfo.sp.toFixed(1) + ' SP</td></tr></tfoot></table>';
+    } else {
+      html += '<span class="none">No spillover</span>';
+    }
+    html += '</div>';
+
     // Full-width: Committed Tasks
     html += '<div class="detail-tasks"><h4>Committed Tasks' + (tasks.length > 0 ? ' (' + tasks.length + ')' : '') + '</h4>';
     if (tasks.length > 0) {
@@ -966,7 +993,7 @@
     return html;
   }
 
-  var DEDUCT_COLS = ['absence', 'pa', 'pr', 'ktlo', 'events', 'hack', 'training'];
+  var DEDUCT_COLS = ['absence', 'pa', 'pr', 'ktlo', 'events', 'hack', 'training', 'spillover'];
 
   function applyPAVisibility() {
     var enabled = teamConfig.pa_enabled !== false;
@@ -1148,11 +1175,12 @@
       tr.dataset.workingDays = '10';
       var html = '<td class="person" onclick="togglePersonDetail(this)">' + name + '</td>';
       DEDUCT_COLS.forEach(function(col) {
-        var extraCls = col === 'pa' ? ' pa-col' : col === 'pr' ? ' pr-col' : '';
-        html += '<td class="num' + extraCls + '"><input class="deduct-input" type="number" min="0" step="0.5" value="0" data-col="' + col + '"></td>';
+        var extraCls = col === 'pa' ? ' pa-col' : col === 'pr' ? ' pr-col' : col === 'spillover' ? ' spillover-col' : '';
+        var readonlyAttr = col === 'spillover' ? ' readonly tabindex="-1"' : '';
+        html += '<td class="num' + extraCls + '"><input class="deduct-input" type="number" min="0" step="0.5" value="0" data-col="' + col + '"' + readonlyAttr + '></td>';
       });
       html += '<td class="num avail-display">10.0</td>';
-      html += '<td class="num"><input class="eff-input" type="number" min="0" max="100" step="1" value="' + eff + '">%</td>';
+      html += '<td class="num"><input class="eff-input" type="number" min="0" max="100" step="1" value="' + eff + '"></td>';
       var cap = (10 * eff / 100).toFixed(1);
       var cls = eff === 0 ? 'zero' : (10 * eff / 100) < 3 ? 'low' : 'full';
       html += '<td class="num capacity ' + cls + ' person-capacity">' + cap + '</td>';
@@ -3161,6 +3189,8 @@
           absences: data.absence_detail || {},
           pa: data.pa_detail || {},
           pr: data.pr_detail || {},
+          spillover: data.spillover_detail || {},
+          activeSprintName: data.active_sprint_name || '',
         };
 
         var hCount = data.holidays_in_sprint.length;
@@ -3216,6 +3246,12 @@
               prInput.value = personPR;
               toggleHasValue(prInput);
             }
+          }
+          var spillInput = row.querySelector('.deduct-input[data-col="spillover"]');
+          if (spillInput && data.spillover) {
+            var personSpill = data.spillover[row.dataset.person] || 0;
+            spillInput.value = personSpill > 0 ? personSpill.toFixed(1) : 0;
+            toggleHasValue(spillInput);
           }
           recomputeCapacity(row);
         });
