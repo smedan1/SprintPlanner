@@ -102,6 +102,7 @@ Settings are managed via the gear icon in the UI header. On first run with no te
 - PA schedule page URL is configured in `team-config.json` (`pa_confluence_url`)
 - For each sprint, check the schedule for entries whose date falls within `[start_date, end_date)` — reserve 1 day PA per person matched
 - PA is optional — can be disabled in settings for teams that don't use it
+- Account ID → name mapping is auto-discovered from Confluence view format and cached in `confluence_account_ids`. Display names are HTML-decoded (e.g. `&ccedil;` → `ç`) before matching to team members
 - PR review schedule page URL is configured in `team-config.json` (`pr_confluence_url`)
 - PR page has a 3-column table (Team, Person, Date). Only rows matching the configured board name are included. Deduction per rotation configurable via `pr_duty_weight` (0.5 = half day, 1 = full day)
 - PR is optional — can be disabled in settings for teams that don't use it
@@ -156,7 +157,7 @@ Stored in `holidays-ca-qc.json`. Covers Canada + Quebec holidays for **2026**.
 - **Drag rows** between backlog sections and Sprint Commitment to plan the sprint
 - **Right-click context menu**: right-click a task to move it to any section without dragging
 - **Editable SP**: type a new value in the SP column; SP=0 means 4h in Jira timetracking (counts as 0.5 SP in capacity math)
-- **Epic expansion**: click an epic row to expand it inline and see its child tasks (fetched from Jira via `/api/epic-children`). Children show which sprint they belong to via a pill badge. All children are draggable and have a right-click context menu to move them to any section. Children are read-only (edit from their backlog row). Expanded epics collapse on page reload or Discard All. Child rows have a faint purple tint and left border for visual distinction.
+- **Epic expansion**: click an epic row to expand it inline and see its child tasks (fetched from Jira via `/api/epic-children`). Children are indented under the parent epic with a faint purple tint and left border. Sprint membership is shown as a pill badge in the Summary column. All children are draggable and have a right-click context menu to move them to any section. Children are read-only (edit from their backlog row). Expanded epics collapse on page reload or Discard All.
 - **Editable Assignee**: dropdown restricted to team members
 - **Editable Priority**: custom dropdown with Jira priority icons (Showstopper, Critical, Major, Minor, None)
 - **Spillover column**: read-only deduction showing remaining work from the active (current) sprint per person. Computed from Jira `timetracking.remainingEstimate` on incomplete issues. Parsed from the estimate string (e.g. "3d" → 3.0 SP) to avoid dependency on Jira's hours-per-day config.
@@ -190,7 +191,7 @@ Stored in `holidays-ca-qc.json`. Covers Canada + Quebec holidays for **2026**.
 - Never commit `.mcp.json` — it contains the Jira personal token
 - Never commit `team-config.json` — contains team-specific settings
 - Jira REST API is corporate-blocked; MCP is the only route
-- Tech stack: Python + Playwright (`channel="chrome"`) for Workday scraping; npm/Node.js blocked by corporate network
+- Tech stack: Python + Playwright (`channel="chrome"`) for Workday scraping; vanilla JS frontend by design (single-file, no build step)
 
 ## File Reference
 

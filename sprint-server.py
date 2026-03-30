@@ -15,6 +15,7 @@ API:
     Body: { "issue_key": "FDATA-24666", "sprint_id": 156907 }
 """
 
+import html
 import json
 import os
 import re
@@ -787,7 +788,7 @@ def _discover_account_ids_from_view(page_id: str, token: str, team: list[str]) -
         discovered = {}
         for m in user_link_pattern.finditer(view_html):
             aid = m.group(1)
-            display = m.group(2).strip()
+            display = html.unescape(m.group(2).strip())
             if aid not in discovered and display:
                 matched = _match_name_to_team(display, team)
                 if matched:

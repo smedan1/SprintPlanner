@@ -84,7 +84,7 @@ On first launch with no team configured, the Settings modal opens automatically.
 - The capacity table shows each team member with their working days, deductions, efficiency, and calculated capacity
 - **Drag tasks** from backlog sections into Sprint Commitment (or back)
 - **Right-click tasks** to move them via a context menu (useful when the destination requires a lot of scrolling)
-- **Expand epics** by clicking an epic row to see its child tasks inline. Children show their sprint membership as badges, and can be dragged or right-click moved to any section
+- **Expand epics** by clicking an epic row to see its child tasks inline, indented under the parent. Children show their sprint membership as badges in the Summary column, and can be dragged or right-click moved to any section
 - **Edit SP** directly in the table (click the SP cell); SP=0 means 4h of work and counts as 0.5 SP in capacity calculations
 - **Click a person's name** in the capacity table to expand a detail row showing vacation date ranges, PA/PR schedule dates, and committed tasks (updates dynamically as you make changes)
 - **Edit assignees** via dropdown in each row
