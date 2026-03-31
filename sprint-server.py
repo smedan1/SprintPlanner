@@ -33,6 +33,11 @@ PORT       = 5000
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 MCP_JSON   = os.path.join(SCRIPT_DIR, '.mcp.json')
 
+# Network timeout constants (seconds)
+TIMEOUT_HEALTH = 10   # health checks (Jira serverInfo, Docker info)
+TIMEOUT_API    = 15   # standard Jira/Confluence API calls
+TIMEOUT_HEAVY  = 20   # heavier fetches (search with many results, epic children)
+
 
 def load_config():
     with open(MCP_JSON, 'r') as f:
@@ -75,7 +80,7 @@ def check_confluence_auth() -> tuple[bool, str, str, bool]:
         }
     )
     try:
-        with urllib.request.urlopen(req, timeout=6) as resp:
+        with urllib.request.urlopen(req, timeout=TIMEOUT_HEALTH) as resp:
             data = json.loads(resp.read().decode('utf-8'))
         name = data.get('displayName') or data.get('username') or 'unknown'
         return True, name, '', False
@@ -117,7 +122,7 @@ def _download_priority_icon(icon_url: str, pri_name: str) -> str:
         return f'icons/{local_name}'
     try:
         req = urllib.request.Request(icon_url, headers={'Authorization': f'Bearer {JIRA_TOKEN}'})
-        with urllib.request.urlopen(req, timeout=10) as resp:
+        with urllib.request.urlopen(req, timeout=TIMEOUT_API) as resp:
             data = resp.read()
         with open(local_path, 'wb') as f:
             f.write(data)
@@ -138,7 +143,7 @@ def fetch_jira_priorities() -> list[dict]:
         headers={'Authorization': f'Bearer {JIRA_TOKEN}'}
     )
     try:
-        with urllib.request.urlopen(req, timeout=10) as resp:
+        with urllib.request.urlopen(req, timeout=TIMEOUT_API) as resp:
             raw = json.loads(resp.read().decode('utf-8'))
         result = []
         seen_names = set()
@@ -172,7 +177,7 @@ def check_jira_health() -> tuple[bool, str]:
         headers={'Authorization': f'Bearer {JIRA_TOKEN}'}
     )
     try:
-        with urllib.request.urlopen(req, timeout=5) as resp:
+        with urllib.request.urlopen(req, timeout=TIMEOUT_HEALTH) as resp:
             return resp.status < 300, ''
     except urllib.error.HTTPError as e:
         return False, f'HTTP {e.code}'
@@ -184,7 +189,7 @@ def check_docker() -> tuple[bool, str]:
     try:
         result = subprocess.run(
             ['docker', 'info', '--format', '{{.ServerVersion}}'],
-            capture_output=True, timeout=5
+            capture_output=True, timeout=TIMEOUT_HEALTH
         )
         if result.returncode == 0:
             return True, ''
@@ -212,7 +217,7 @@ def get_story_points(issue_keys: list[str]) -> tuple[int, dict]:
         headers={'Content-Type': 'application/json', 'Authorization': f'Bearer {JIRA_TOKEN}'}
     )
     try:
-        with urllib.request.urlopen(req, timeout=15) as resp:
+        with urllib.request.urlopen(req, timeout=TIMEOUT_API) as resp:
             body = json.loads(resp.read().decode('utf-8'))
         return 200, {i['key']: i.get('fields', {}).get('customfield_10130')
                      for i in body.get('issues', [])}
@@ -238,7 +243,7 @@ def _resolve_epic_names(epic_keys: list[str]) -> dict[str, str]:
         headers={'Content-Type': 'application/json', 'Authorization': f'Bearer {JIRA_TOKEN}'}
     )
     try:
-        with urllib.request.urlopen(req, timeout=15) as resp:
+        with urllib.request.urlopen(req, timeout=TIMEOUT_API) as resp:
             body = json.loads(resp.read().decode('utf-8'))
         return {i['key']: i['fields'].get('summary', '') for i in body.get('issues', [])}
     except Exception as e:
@@ -259,7 +264,7 @@ def get_issues_for_sprint(sprint_id: int) -> list[dict]:
         headers={'Content-Type': 'application/json', 'Authorization': f'Bearer {JIRA_TOKEN}'}
     )
     try:
-        with urllib.request.urlopen(req, timeout=20) as resp:
+        with urllib.request.urlopen(req, timeout=TIMEOUT_HEAVY) as resp:
             body = json.loads(resp.read().decode('utf-8'))
         result = []
         for i in body.get('issues', []):
@@ -318,7 +323,7 @@ def get_epic_children(epic_key: str) -> list[dict]:
         headers={'Content-Type': 'application/json', 'Authorization': f'Bearer {JIRA_TOKEN}'}
     )
     try:
-        with urllib.request.urlopen(req, timeout=20) as resp:
+        with urllib.request.urlopen(req, timeout=TIMEOUT_HEAVY) as resp:
             body = json.loads(resp.read().decode('utf-8'))
         result = []
         for i in body.get('issues', []):
@@ -401,7 +406,7 @@ def get_time_spent(issue_key: str) -> int:
         headers={'Content-Type': 'application/json', 'Authorization': f'Bearer {JIRA_TOKEN}'}
     )
     try:
-        with urllib.request.urlopen(req, timeout=10) as resp:
+        with urllib.request.urlopen(req, timeout=TIMEOUT_API) as resp:
             body = json.loads(resp.read().decode('utf-8'))
         tt = (body.get('fields') or {}).get('timetracking') or {}
         return tt.get('timeSpentSeconds') or 0
@@ -430,7 +435,7 @@ def update_issue_fields(issue_key: str, fields: dict) -> tuple[int, str]:
         headers={'Content-Type': 'application/json', 'Authorization': f'Bearer {JIRA_TOKEN}'}
     )
     try:
-        with urllib.request.urlopen(req, timeout=10) as resp:
+        with urllib.request.urlopen(req, timeout=TIMEOUT_API) as resp:
             return resp.status, 'ok'
     except urllib.error.HTTPError as e:
         return e.code, e.read().decode('utf-8', errors='replace')
@@ -449,7 +454,7 @@ def find_user_name(display_name: str) -> tuple[str, str]:
         headers={'Authorization': f'Bearer {JIRA_TOKEN}'}
     )
     try:
-        with urllib.request.urlopen(req, timeout=5) as resp:
+        with urllib.request.urlopen(req, timeout=TIMEOUT_API) as resp:
             users = json.loads(resp.read().decode('utf-8'))
         if not users:
             return '', f"No Jira user found matching '{display_name}'"
@@ -472,7 +477,7 @@ def move_issue_to_sprint(issue_key: str, sprint_id: int) -> tuple[int, str]:
         headers={'Content-Type': 'application/json', 'Authorization': f'Bearer {JIRA_TOKEN}'}
     )
     try:
-        with urllib.request.urlopen(req, timeout=10) as resp:
+        with urllib.request.urlopen(req, timeout=TIMEOUT_API) as resp:
             return resp.status, 'ok'
     except urllib.error.HTTPError as e:
         return e.code, e.read().decode('utf-8', errors='replace')
@@ -543,7 +548,7 @@ def get_board_name() -> str:
             req = urllib.request.Request(
                 f'{JIRA_URL}/rest/agile/1.0/board/{cfg["board_id"]}',
                 headers={'Authorization': f'Bearer {JIRA_TOKEN}'})
-            with urllib.request.urlopen(req, timeout=10) as resp:
+            with urllib.request.urlopen(req, timeout=TIMEOUT_API) as resp:
                 data = json.loads(resp.read().decode('utf-8'))
                 name = data.get('name', '')
                 if name:
@@ -707,7 +712,7 @@ def _get_pa_page_id() -> str:
             req = urllib.request.Request(pa_url, method='GET', headers={
                 'Cookie': f'cloud.session.token={token}' if token else '',
             })
-            with urllib.request.urlopen(req, timeout=10) as resp:
+            with urllib.request.urlopen(req, timeout=TIMEOUT_API) as resp:
                 final_url = resp.url
             m = re.search(r'/pages/(\d+)', final_url)
             if m:
@@ -776,7 +781,7 @@ def _discover_account_ids_from_view(page_id: str, token: str, team: list[str]) -
                 'Accept': 'application/json',
             }
         )
-        with urllib.request.urlopen(req, timeout=15) as resp:
+        with urllib.request.urlopen(req, timeout=TIMEOUT_API) as resp:
             data = json.loads(resp.read().decode('utf-8'))
         view_html = data.get('body', {}).get('view', {}).get('value', '')
         # View format renders user mentions as: <a ... data-account-id="..." ...>Display Name</a>
@@ -822,7 +827,7 @@ def fetch_pa_from_confluence(sprint_start_str: str, sprint_end_str: str) -> dict
             'Accept': 'application/json',
         }
     )
-    with urllib.request.urlopen(req, timeout=15) as resp:
+    with urllib.request.urlopen(req, timeout=TIMEOUT_API) as resp:
         data = json.loads(resp.read().decode('utf-8'))
 
     body = data.get('body', {}).get('storage', {}).get('value', '')
@@ -995,7 +1000,7 @@ def _get_pr_page_id() -> str:
             req = urllib.request.Request(pr_url, method='GET', headers={
                 'Cookie': f'cloud.session.token={token}' if token else '',
             })
-            with urllib.request.urlopen(req, timeout=10) as resp:
+            with urllib.request.urlopen(req, timeout=TIMEOUT_API) as resp:
                 final_url = resp.url
             m = re.search(r'/pages/(\d+)', final_url)
             if m:
@@ -1025,7 +1030,7 @@ def fetch_pr_from_confluence(sprint_start_str: str, sprint_end_str: str) -> dict
             'Accept': 'application/json',
         }
     )
-    with urllib.request.urlopen(req, timeout=15) as resp:
+    with urllib.request.urlopen(req, timeout=TIMEOUT_API) as resp:
         data = json.loads(resp.read().decode('utf-8'))
 
     body = data.get('body', {}).get('storage', {}).get('value', '')
@@ -1164,7 +1169,7 @@ def get_active_sprint(board_id: int) -> dict | None:
         headers={'Authorization': f'Bearer {JIRA_TOKEN}'}
     )
     try:
-        with urllib.request.urlopen(req, timeout=15) as resp:
+        with urllib.request.urlopen(req, timeout=TIMEOUT_API) as resp:
             sprints = json.loads(resp.read().decode('utf-8')).get('values', [])
         if not sprints:
             return None
@@ -1198,7 +1203,7 @@ def get_spillover_for_sprint(sprint_id: int, team: list[str]) -> tuple[dict, dic
     spillover: dict[str, float] = {}
     detail: dict[str, dict] = {}
     try:
-        with urllib.request.urlopen(req, timeout=20) as resp:
+        with urllib.request.urlopen(req, timeout=TIMEOUT_HEAVY) as resp:
             body = json.loads(resp.read().decode('utf-8'))
         team_set = set(team)
         for issue in body.get('issues', []):
@@ -1245,7 +1250,7 @@ def get_future_sprint_info(board_id: int) -> tuple[dict | None, dict]:
         headers={'Authorization': f'Bearer {JIRA_TOKEN}'}
     )
     try:
-        with urllib.request.urlopen(req, timeout=15) as resp:
+        with urllib.request.urlopen(req, timeout=TIMEOUT_API) as resp:
             sprints = json.loads(resp.read().decode('utf-8')).get('values', [])
     except Exception as e:
         print(f'  x Failed to fetch future sprints for board {board_id}: {e}')
@@ -1530,7 +1535,7 @@ class Handler(BaseHTTPRequestHandler):
                 url = f'{JIRA_URL}/rest/agile/1.0/board?{params}'
                 req = urllib.request.Request(url, method='GET',
                                              headers={'Authorization': f'Bearer {JIRA_TOKEN}'})
-                with urllib.request.urlopen(req, timeout=15) as resp:
+                with urllib.request.urlopen(req, timeout=TIMEOUT_API) as resp:
                     data = json.loads(resp.read().decode('utf-8'))
                 boards = [{'id': b['id'], 'name': b['name']} for b in data.get('values', [])]
                 boards.sort(key=lambda b: b['name'].lower())
@@ -1559,7 +1564,7 @@ class Handler(BaseHTTPRequestHandler):
                 with urllib.request.urlopen(
                     urllib.request.Request(f'{JIRA_URL}/rest/api/2/search?{params}',
                                            headers=hdrs),
-                    timeout=15
+                    timeout=TIMEOUT_API
                 ) as r:
                     s_data = json.loads(r.read().decode('utf-8'))
                 seen = set()

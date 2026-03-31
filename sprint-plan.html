@@ -1341,6 +1341,11 @@
   var PRI_CLASS    = { Critical:'pri-critical', Blocker:'pri-critical', Major:'pri-major', Minor:'pri-minor', Trivial:'pri-minor' };
   var JIRA_PRIORITIES = []; // [{id, name, iconUrl, localIcon}, ...] — populated from /api/priorities
 
+  // ── Fetch timeout constants (ms) ──
+  var TIMEOUT_SHORT = 10000;   // settings UI calls (boards, backlogs, teams)
+  var TIMEOUT_DEFAULT = 15000; // status checks, data fetches (PA, PR, absences)
+  var TIMEOUT_LONG = 20000;    // board-change Confluence re-fetches
+
   // ── Column sorting ──
   var PRIORITY_ORDER = { Showstopper: 0, Critical: 1, Major: 2, Minor: 3, None: 4, '': 5 };
 
@@ -2656,7 +2661,7 @@
     container.innerHTML = '<span style="color:#5e6c84;padding:8px 12px;display:block;">Searching...</span>';
     var params = 'name=' + encodeURIComponent(teamFilter);
     if (projectFilter) params += '&project=' + encodeURIComponent(projectFilter);
-    fetch('http://localhost:5000/api/boards?' + params, { signal: AbortSignal.timeout(10000) })
+    fetch('http://localhost:5000/api/boards?' + params, { signal: AbortSignal.timeout(TIMEOUT_SHORT) })
       .then(function(r) { return r.json(); })
       .then(function(boards) {
         boardPickerList = boards;
@@ -2690,7 +2695,7 @@
         // Preview backlogs for the newly selected board
         var bl = document.getElementById('settings-backlog-list');
         bl.innerHTML = '<span style="color:#5e6c84;">Loading backlogs...</span>';
-        fetch('http://localhost:5000/api/board-sprints?board_id=' + b.id, { signal: AbortSignal.timeout(10000) })
+        fetch('http://localhost:5000/api/board-sprints?board_id=' + b.id, { signal: AbortSignal.timeout(TIMEOUT_SHORT) })
           .then(function(r) { return r.json(); })
           .then(function(d) {
             settingsBacklogPreview = d.backlog_sprints || {};
@@ -2710,7 +2715,7 @@
       updateBoardSelectedDisplay();
       var bl = document.getElementById('settings-backlog-list');
       bl.innerHTML = '<span style="color:#5e6c84;">Loading backlogs...</span>';
-      fetch('http://localhost:5000/api/board-sprints?board_id=' + b.id, { signal: AbortSignal.timeout(10000) })
+      fetch('http://localhost:5000/api/board-sprints?board_id=' + b.id, { signal: AbortSignal.timeout(TIMEOUT_SHORT) })
         .then(function(r) { return r.json(); })
         .then(function(d) { settingsBacklogPreview = d.backlog_sprints || {}; renderSettingsBacklogPreview(); })
         .catch(function() { bl.innerHTML = '<span style="color:#bf2600;">Failed to load backlogs</span>'; });
@@ -2731,7 +2736,7 @@
     sel.disabled = true;
     if (status) status.textContent = '';
     fetch('http://localhost:5000/api/project-teams?project=' + encodeURIComponent(projectKey),
-          { signal: AbortSignal.timeout(10000) })
+          { signal: AbortSignal.timeout(TIMEOUT_SHORT) })
       .then(function(r) { return r.json(); })
       .then(function(teams) {
         sel.innerHTML = '<option value="">— select a team —</option>';
@@ -2891,7 +2896,7 @@
       pollTeamAttempts = 0;
       return;
     }
-    fetch('http://localhost:5000/api/team-status', { signal: AbortSignal.timeout(7000) })
+    fetch('http://localhost:5000/api/team-status', { signal: AbortSignal.timeout(TIMEOUT_DEFAULT) })
       .then(function(r) { return r.json(); })
       .then(function(d) {
         if (d.configured && d.count > 0) {
@@ -3008,11 +3013,11 @@
         // If PA was just re-enabled (and board didn't change — board change handles its own PA refresh)
         if (paEnabled && paWasOff && !boardChanged) {
           showToast('Refreshing PA schedule...', 'info');
-          fetch('http://localhost:5000/api/pa-status', { signal: AbortSignal.timeout(10000) })
+          fetch('http://localhost:5000/api/pa-status', { signal: AbortSignal.timeout(TIMEOUT_DEFAULT) })
             .then(function(r) { return r.json(); })
             .then(function(ps) {
               if (!ps.fresh) {
-                return fetch('http://localhost:5000/api/fetch-pa', { signal: AbortSignal.timeout(15000) });
+                return fetch('http://localhost:5000/api/fetch-pa', { signal: AbortSignal.timeout(TIMEOUT_DEFAULT) });
               }
             })
             .then(function() {
@@ -3024,10 +3029,10 @@
         // If PR was just re-enabled (and board didn't change — board change handles its own PR refresh)
         if (prEnabled && prWasOff && !boardChanged) {
           showToast('Refreshing PR schedule...', 'info');
-          fetch('http://localhost:5000/api/pr-status', { signal: AbortSignal.timeout(10000) })
+          fetch('http://localhost:5000/api/pr-status', { signal: AbortSignal.timeout(TIMEOUT_DEFAULT) })
             .then(function(r) { return r.json(); })
             .then(function(ps) {
-              if (!ps.fresh) return fetch('http://localhost:5000/api/fetch-pr', { signal: AbortSignal.timeout(15000) });
+              if (!ps.fresh) return fetch('http://localhost:5000/api/fetch-pr', { signal: AbortSignal.timeout(TIMEOUT_DEFAULT) });
             })
             .then(function() {
               if (teamConfig.board_id) return initSprintInfo().then(function() { refreshTasks(true); });
@@ -3089,7 +3094,7 @@
           var scheduleRefreshes = [];
           if (paEnabled) {
             scheduleRefreshes.push(
-              fetch('http://localhost:5000/api/fetch-pa', { signal: AbortSignal.timeout(20000) })
+              fetch('http://localhost:5000/api/fetch-pa', { signal: AbortSignal.timeout(TIMEOUT_LONG) })
                 .then(function(r) {
                   if (!r.ok) return r.json().catch(function() { return {}; }).then(function(b) {
                     showToast('PA schedule fetch failed: ' + (b.error || 'HTTP ' + r.status), 'warn');
@@ -3100,7 +3105,7 @@
           }
           if (prEnabled) {
             scheduleRefreshes.push(
-              fetch('http://localhost:5000/api/fetch-pr', { signal: AbortSignal.timeout(20000) })
+              fetch('http://localhost:5000/api/fetch-pr', { signal: AbortSignal.timeout(TIMEOUT_LONG) })
                 .then(function(r) {
                   if (!r.ok) return r.json().catch(function() { return {}; }).then(function(b) {
                     showToast('PR schedule fetch failed: ' + (b.error || 'HTTP ' + r.status), 'warn');
@@ -3340,7 +3345,7 @@
       var skip = Object.keys(passed).filter(function (k) { return passed[k]; });
       var url  = 'http://localhost:5000/api/health' + (skip.length ? '?skip=' + skip.join(',') : '');
 
-      fetch(url, { signal: AbortSignal.timeout(7000) })
+      fetch(url, { signal: AbortSignal.timeout(TIMEOUT_DEFAULT) })
         .then(function (resp) { return resp.json(); })
         .then(function (d) {
           setRow(svrIcon, svrHint, 'ok', 'Running on localhost:5000');
@@ -3386,7 +3391,7 @@
 
           if (passed.jira && passed.docker && passed.confluence) {
             // Check if team is configured before running absence/PA checks
-            fetch('http://localhost:5000/api/team-status', { signal: AbortSignal.timeout(7000) })
+            fetch('http://localhost:5000/api/team-status', { signal: AbortSignal.timeout(TIMEOUT_DEFAULT) })
               .then(function(r) { return r.json(); })
               .then(function(d) {
                 // Store PA/PR config early so checks can use it
@@ -3450,7 +3455,7 @@
     function checkAbsences() {
       absRow.style.display = '';
       setRow(absIcon, absHint, 'checking', 'Checking absence cache...');
-      fetch('http://localhost:5000/api/absence-status', { signal: AbortSignal.timeout(10000) })
+      fetch('http://localhost:5000/api/absence-status', { signal: AbortSignal.timeout(TIMEOUT_DEFAULT) })
         .then(function(r) { return r.json(); })
         .then(function(d) {
           if (d.fresh) {
@@ -3499,7 +3504,7 @@
     };
 
     function pollAbsences() {
-      fetch('http://localhost:5000/api/absence-status', { signal: AbortSignal.timeout(7000) })
+      fetch('http://localhost:5000/api/absence-status', { signal: AbortSignal.timeout(TIMEOUT_DEFAULT) })
         .then(function(r) { return r.json(); })
         .then(function(d) {
           if (d.fresh) {
@@ -3521,7 +3526,7 @@
     function pollAbsencesSilent() {
       return new Promise(function(resolve) {
         function check() {
-          fetch('http://localhost:5000/api/absence-status', { signal: AbortSignal.timeout(7000) })
+          fetch('http://localhost:5000/api/absence-status', { signal: AbortSignal.timeout(TIMEOUT_DEFAULT) })
             .then(function(r) { return r.json(); })
             .then(function(d) {
               if (d.fresh) resolve();
@@ -3538,7 +3543,7 @@
     window.triggerAbsenceAndPAChecks = function() {
       showToast('Checking absences & schedules...', 'info');
 
-      fetch('http://localhost:5000/api/absence-status', { signal: AbortSignal.timeout(10000) })
+      fetch('http://localhost:5000/api/absence-status', { signal: AbortSignal.timeout(TIMEOUT_DEFAULT) })
         .then(function(r) { return r.json(); })
         .then(function(d) {
           if (!d.fresh) {
@@ -3549,21 +3554,21 @@
         })
         .then(function() {
           if (teamConfig.pa_enabled === false) return;
-          return fetch('http://localhost:5000/api/pa-status', { signal: AbortSignal.timeout(10000) })
+          return fetch('http://localhost:5000/api/pa-status', { signal: AbortSignal.timeout(TIMEOUT_DEFAULT) })
             .then(function(r) { return r.json(); })
             .then(function(d) {
               if (!d.fresh) {
-                return fetch('http://localhost:5000/api/fetch-pa', { signal: AbortSignal.timeout(15000) });
+                return fetch('http://localhost:5000/api/fetch-pa', { signal: AbortSignal.timeout(TIMEOUT_DEFAULT) });
               }
             });
         })
         .then(function() {
           if (teamConfig.pr_enabled === false) return;
-          return fetch('http://localhost:5000/api/pr-status', { signal: AbortSignal.timeout(10000) })
+          return fetch('http://localhost:5000/api/pr-status', { signal: AbortSignal.timeout(TIMEOUT_DEFAULT) })
             .then(function(r) { return r.json(); })
             .then(function(d) {
               if (!d.fresh) {
-                return fetch('http://localhost:5000/api/fetch-pr', { signal: AbortSignal.timeout(15000) });
+                return fetch('http://localhost:5000/api/fetch-pr', { signal: AbortSignal.timeout(TIMEOUT_DEFAULT) });
               }
             });
         })
@@ -3587,7 +3592,7 @@
       }
       paRow.style.display = '';
       setRow(paIcon, paHint, 'checking', 'Checking PA schedule cache...');
-      fetch('http://localhost:5000/api/pa-status', { signal: AbortSignal.timeout(10000) })
+      fetch('http://localhost:5000/api/pa-status', { signal: AbortSignal.timeout(TIMEOUT_DEFAULT) })
         .then(function(r) { return r.json(); })
         .then(function(d) {
           if (d.fresh) {
@@ -3617,7 +3622,7 @@
       btn.disabled = true;
       btn.textContent = 'Fetching...';
       setRow(paIcon, paHint, 'checking', 'Fetching PA schedule from Confluence...');
-      fetch('http://localhost:5000/api/fetch-pa', { signal: AbortSignal.timeout(15000) })
+      fetch('http://localhost:5000/api/fetch-pa', { signal: AbortSignal.timeout(TIMEOUT_DEFAULT) })
         .then(function(r) { return r.json(); })
         .then(function(d) {
           if (d.ok) {
@@ -3647,7 +3652,7 @@
       }
       prRow.style.display = '';
       setRow(prIcon, prHint, 'checking', 'Checking PR schedule cache...');
-      fetch('http://localhost:5000/api/pr-status', { signal: AbortSignal.timeout(10000) })
+      fetch('http://localhost:5000/api/pr-status', { signal: AbortSignal.timeout(TIMEOUT_DEFAULT) })
         .then(function(r) { return r.json(); })
         .then(function(d) {
           if (d.fresh) {
@@ -3676,7 +3681,7 @@
       btn.disabled = true;
       btn.textContent = 'Fetching...';
       setRow(prIcon, prHint, 'checking', 'Fetching PR schedule from Confluence...');
-      fetch('http://localhost:5000/api/fetch-pr', { signal: AbortSignal.timeout(15000) })
+      fetch('http://localhost:5000/api/fetch-pr', { signal: AbortSignal.timeout(TIMEOUT_DEFAULT) })
         .then(function(r) { return r.json(); })
         .then(function(d) {
           if (d.ok) {
