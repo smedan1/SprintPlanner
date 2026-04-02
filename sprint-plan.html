@@ -16,10 +16,22 @@
   .header .meta { margin-top: 6px; opacity: 0.85; font-size: 13px; display: flex; gap: 24px; }
   .header .meta span { display: flex; align-items: center; gap: 5px; }
 
-  /* Layout */
-  .container { max-width: 2265px; width: 100%; margin: 0 auto; padding: 24px 32px; display: grid; grid-template-columns: minmax(800px, 900px) 1fr; gap: 24px; flex: 1; overflow: hidden; }
-  .col-left  { display: flex; flex-direction: column; gap: 24px; overflow-y: auto; min-height: 0; padding-right: 8px; }
-  .col-right { display: flex; flex-direction: column; gap: 24px; min-width: 0; overflow-y: auto; min-height: 0; }
+  /* Layout — two-pane with draggable splitter */
+  .container { max-width: 2265px; width: 100%; margin: 0 auto; padding: 24px 32px; display: flex; flex: 1; overflow: hidden; gap: 0; }
+  .col-left  { display: flex; flex-direction: column; gap: 24px; overflow-y: auto; overflow-x: auto; min-height: 0; min-width: 0; width: var(--left-w, 50%); flex-shrink: 0; }
+  .col-right { display: flex; flex-direction: column; gap: 24px; min-width: 0; overflow-y: auto; min-height: 0; flex: 1; padding-left: 16px; }
+  #pane-splitter { width: 8px; cursor: col-resize; display: flex; align-items: center; justify-content: center; background: transparent; padding: 0; flex-shrink: 0; position: relative; z-index: 2; }
+  #pane-splitter::after { content: ''; width: 3px; height: 40px; background: #c1c7d0; border-radius: 2px; transition: background 0.15s, height 0.15s; }
+  #pane-splitter:hover::after { background: #0052cc; height: 60px; }
+  .container.left-collapsed .col-left { display: none; }
+  .container.left-collapsed #pane-splitter { cursor: pointer; }
+  .container.left-collapsed #pane-splitter::after { height: 20px; }
+  body.splitter-dragging { cursor: col-resize !important; user-select: none; }
+  body.splitter-dragging * { cursor: col-resize !important; }
+
+  /* Capacity table: shrink deduction columns on narrow left pane */
+  #capacity-body .deduct-input { width: 44px; }
+  @container (max-width: 700px) { .col-left table th, .col-left table td { padding: 6px 4px; font-size: 12px; } }
 
   /* Summary grid 4×1 in left column */
   .col-left .summary-grid { grid-template-columns: repeat(4, 1fr); gap: 8px; }
@@ -522,6 +534,8 @@
   </div>
 
 </div><!-- /col-left -->
+
+<div id="pane-splitter" title="Drag to resize · Double-click to collapse"></div>
 
 <div class="col-right">
   <!-- ═══ SECTION 3: SPRINT COMMITMENT ═══ -->
@@ -2761,6 +2775,65 @@
   }
 
   var boardSearchTimer = null;
+
+  // ── Draggable pane splitter ──
+  (function() {
+    var container = document.querySelector('.container');
+    var splitter = document.getElementById('pane-splitter');
+    var colLeft = container.querySelector('.col-left');
+    var W_KEY = 'sprintplanner-left-width';
+    var C_KEY = 'sprintplanner-left-collapsed';
+
+    function setWidth(pct) {
+      pct = Math.max(25, Math.min(pct, 70));
+      container.style.setProperty('--left-w', pct + '%');
+      try { localStorage.setItem(W_KEY, String(pct)); } catch(e) {}
+    }
+
+    function setCollapsed(collapsed) {
+      container.classList.toggle('left-collapsed', collapsed);
+      splitter.title = collapsed ? 'Click to expand' : 'Drag to resize \u00b7 Double-click to collapse';
+      try { localStorage.setItem(C_KEY, collapsed ? '1' : ''); } catch(e) {}
+    }
+
+    // Restore saved state
+    try {
+      var saved = localStorage.getItem(W_KEY);
+      if (saved) setWidth(parseFloat(saved));
+      if (localStorage.getItem(C_KEY) === '1') setCollapsed(true);
+    } catch(e) {}
+
+    // Single click when collapsed → expand; double-click when expanded → collapse
+    splitter.addEventListener('dblclick', function() {
+      if (!container.classList.contains('left-collapsed')) setCollapsed(true);
+    });
+    splitter.addEventListener('click', function() {
+      if (container.classList.contains('left-collapsed')) setCollapsed(false);
+    });
+
+    // Drag to resize
+    splitter.addEventListener('mousedown', function(e) {
+      if (container.classList.contains('left-collapsed')) return;
+      if (e.detail >= 2) return; // ignore double-click start
+      e.preventDefault();
+      document.body.classList.add('splitter-dragging');
+      var containerRect = container.getBoundingClientRect();
+      var containerW = containerRect.width;
+      var offsetLeft = containerRect.left;
+
+      function onMove(ev) {
+        var pct = ((ev.clientX - offsetLeft) / containerW) * 100;
+        setWidth(pct);
+      }
+      function onUp() {
+        document.body.classList.remove('splitter-dragging');
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+      }
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+    });
+  })();
 
   document.addEventListener('DOMContentLoaded', function() {
     var teamSel = document.getElementById('settings-team-select');

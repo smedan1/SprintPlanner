@@ -82,6 +82,7 @@ On first launch with no team configured, the Settings modal opens automatically.
 ### 5. Plan the sprint
 
 - The capacity table shows each team member with their working days, deductions, efficiency, and calculated capacity
+- **Resizable panes**: drag the splitter between the capacity table and backlog sections to adjust widths. Double-click the splitter to collapse the left pane; click it again to expand. Width and state persist across reloads
 - **Drag tasks** from backlog sections into Sprint Commitment (or back)
 - **Right-click tasks** to move them via a context menu (useful when the destination requires a lot of scrolling)
 - **Expand epics** by clicking an epic row to see its child tasks inline, indented under the parent. Children show their sprint membership as badges in the Summary column, and can be dragged or right-click moved to any section

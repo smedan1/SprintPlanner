@@ -180,7 +180,7 @@ Stored in `holidays-ca-qc.json`. Covers Canada + Quebec holidays for **2026**.
 - Assignee → resolved via user search (`username` param, Jira Server API)
 - Priority → `priority.id` or `priority.name` (server normalizes aliases: "Standard" → "Minor")
 
-**Layout:** Left and right columns scroll independently. Sprint Commitment card has a blue left border accent for visibility when scrolled.
+**Layout:** Two-pane flexbox layout with a draggable splitter between left (capacity) and right (backlogs) columns. Each column scrolls independently. The splitter can be dragged to resize (25%-70% range), double-clicked to collapse the left pane, or single-clicked when collapsed to expand. Width and collapsed state persist in localStorage. Sprint Commitment card has a blue left border accent for visibility when scrolled.
 
 **Static file serving:** The server also serves files from the `icons/` directory at `/icons/*` (used by the Save feature to embed priority icons as data URIs).
 
