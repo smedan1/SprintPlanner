@@ -91,6 +91,7 @@ On first launch with no team configured, the Settings modal opens automatically.
 - **Edit assignees** via dropdown in each row
 - **Edit priority** via a custom dropdown with Jira priority icons
 - **Edit efficiency %** per person (auto-saved to config)
+- **Collapse backlog sections** by clicking the chevron in the header; collapsed state persists across reloads
 - **Reorder backlog sections** by dragging their headers; order persists across reloads
 - **Sort columns** by clicking Epic, Type, Assignee, or Priority headers (toggles ascending/descending)
 - **Epic column** shows the parent epic name for each task, linked to Jira

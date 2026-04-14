@@ -43,6 +43,9 @@
   #backlog-container { display: grid; gap: 16px; flex-shrink: 0; }
   #backlog-container .card-header { cursor: grab; }
   #backlog-container .card-header:active { cursor: grabbing; }
+  .backlog-collapse-btn { background: none; border: none; cursor: pointer; color: #5e6c84; font-size: 11px; padding: 2px 6px; margin-right: 4px; transition: transform 0.15s; display: inline-block; }
+  .card.backlog-collapsed .backlog-collapse-btn { transform: rotate(-90deg); }
+  .card.backlog-collapsed table { display: none; }
   #backlog-container .card.drag-over-card { outline: 2px dashed #0052cc; outline-offset: -2px; }
   .card-header h2 { font-size: 14px; font-weight: 600; text-transform: uppercase; letter-spacing: .5px; color: #5e6c84; }
   .card-body { padding: 20px; }
@@ -57,6 +60,7 @@
   td.num { text-align: right; font-variant-numeric: tabular-nums; }
   th.num { text-align: right; }
   .pa-col, .pr-col { width: 32px; padding-left: 4px; padding-right: 4px; }
+  .schedule-warn { color: #ff8b00; font-size: 11px; cursor: help; margin-left: 2px; vertical-align: middle; }
   td.capacity { text-align: right; font-weight: 700; font-size: 15px; }
   td.zero { color: #bf2600; }
   td.low  { color: #ff8b00; }
@@ -1908,6 +1912,7 @@
     card.dataset.backlogId = sprintId;
     card.innerHTML =
       '<div class="card-header" draggable="true">' +
+        '<button class="backlog-collapse-btn" title="Collapse/expand this backlog">&#9660;</button>' +
         '<h2>' + name + '</h2>' +
         '<span class="filter-icon" data-filter-key="' + sprintId + '" title="Filter issue types"><svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M1 2h14l-5 6v5l-4 2V8z"/></svg></span>' +
         '<span class="source-note" id="backlog-note-' + sprintId + '">Loading...</span>' +
@@ -1925,6 +1930,13 @@
     wireDropEvents(tbody);
     wireBacklogDrag(card);
     wireFilterIcon(card.querySelector('.filter-icon'));
+    // Collapse toggle
+    var collapseBtn = card.querySelector('.backlog-collapse-btn');
+    collapseBtn.addEventListener('click', function(e) {
+      e.stopPropagation();
+      card.classList.toggle('backlog-collapsed');
+      saveBacklogPrefs();
+    });
     return card;
   }
 
@@ -2031,7 +2043,11 @@
     // Save visual order from DOM
     var cards = document.querySelectorAll('#backlog-container .card[data-backlog-id]');
     prefs.order = [];
-    cards.forEach(function(c) { prefs.order.push(c.dataset.backlogId); });
+    prefs.collapsed = [];
+    cards.forEach(function(c) {
+      prefs.order.push(c.dataset.backlogId);
+      if (c.classList.contains('backlog-collapsed')) prefs.collapsed.push(c.dataset.backlogId);
+    });
     // Save per-section type filters
     prefs.filters = sectionFilters;
     fetch('http://localhost:5000/api/backlog-prefs', {
@@ -2065,8 +2081,10 @@
         Object.keys(selectedBacklogs).forEach(function(id) {
           if (selectedBacklogs[id] && ordered.indexOf(id) === -1) ordered.push(id);
         });
+        var collapsed = prefs.collapsed || [];
         ordered.forEach(function(id) {
-          createBacklogSection(id, allBacklogs[id]);
+          var card = createBacklogSection(id, allBacklogs[id]);
+          if (collapsed.indexOf(id) !== -1) card.classList.add('backlog-collapsed');
         });
         renderBacklogPopover();
       })
@@ -3335,6 +3353,33 @@
         recomputeTeamCapacity();
         applyPAVisibility();
         applyPRVisibility();
+
+        // Warn if PA/PR enabled but no one is scheduled for this sprint
+        var paHeader = document.getElementById('pa-col-header');
+        var prHeader = document.getElementById('pr-col-header');
+        // Remove any existing warnings
+        document.querySelectorAll('.schedule-warn').forEach(function(el) { el.remove(); });
+        if (teamConfig.pa_enabled && data.pa) {
+          var anyPA = Object.keys(data.pa).some(function(k) { return data.pa[k] > 0; });
+          if (!anyPA) {
+            var w = document.createElement('span');
+            w.className = 'schedule-warn';
+            w.title = 'No PA duties found for this sprint \u2014 check the Confluence schedule';
+            w.textContent = '\u26A0';
+            paHeader.appendChild(w);
+          }
+        }
+        if (teamConfig.pr_enabled && data.pr) {
+          var anyPR = Object.keys(data.pr).some(function(k) { return data.pr[k] > 0; });
+          if (!anyPR) {
+            var w2 = document.createElement('span');
+            w2.className = 'schedule-warn';
+            w2.title = 'No PR review duties found for this sprint \u2014 check the Confluence schedule';
+            w2.textContent = '\u26A0';
+            prHeader.appendChild(w2);
+          }
+        }
+
         // Initialize backlog sections from prefs
         return initBacklogs(data.backlog_sprints);
       })
@@ -3407,12 +3452,13 @@
 
     // Track which services have already passed — don't recheck them
     var passed = { jira: false, docker: false, confluence: false };
+    var confluenceReauthPending = false;
 
     function poll() {
       // Only show spinner for services not yet passing
       if (!passed.jira)       setRow(jiraIcon,   jiraHint,   'checking', 'Checking…');
       if (!passed.docker)     setRow(dockerIcon, dockerHint, 'checking', 'Checking…');
-      if (!passed.confluence) setRow(confIcon,   confHint,   'checking', 'Checking…');
+      if (!passed.confluence && !confluenceReauthPending) setRow(confIcon, confHint, 'checking', 'Checking…');
 
       // Tell the server to skip checks for services already confirmed OK
       var skip = Object.keys(passed).filter(function (k) { return passed[k]; });
@@ -3447,7 +3493,10 @@
           if (!passed.confluence) {
             if (d.confluence) {
               passed.confluence = true;
+              confluenceReauthPending = false;
               setRow(confIcon, confHint, 'ok', 'Authenticated as ' + d.confluence_user);
+            } else if (confluenceReauthPending) {
+              // Don't overwrite the "waiting for SSO" message while reauth is in progress
             } else if (d.confluence_needs_auth) {
               confIcon.textContent = '⚠';
               confIcon.style.color = '#ff8b00';
@@ -3509,6 +3558,7 @@
     window.reauthConfluence = function (btn) {
       btn.disabled = true;
       btn.textContent = 'Launching…';
+      confluenceReauthPending = true;
       fetch('http://localhost:5000/oauth/reauth')
         .then(function () {
           confIcon.textContent = '⏳';
@@ -3519,6 +3569,7 @@
           setTimeout(poll, 4000);
         })
         .catch(function () {
+          confluenceReauthPending = false;
           btn.disabled = false;
           btn.textContent = 'Re-authenticate';
         });

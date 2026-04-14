@@ -165,6 +165,7 @@ Stored in `holidays-ca-qc.json`. Covers Canada + Quebec holidays for **2026**.
 - **Holiday display**: capacity card subtitle shows working days and holiday names in the sprint; AVAIL column tooltip shows full breakdown (weekdays − holidays)
 - **Editable Efficiency %**: per-person, recalculates capacity in real time, auto-saved to config
 - **Editable Unscheduled Buffer**: team-level buffer, recalculates net capacity in real time
+- **Collapsible backlog sections**: click the chevron in a backlog header to collapse/expand it; collapsed state persists in `backlog-prefs.json`
 - **Draggable backlog sections**: drag backlog headers to reorder; order persists in `backlog-prefs.json`
 - **Sortable columns**: click Epic, Type, Assignee, or Priority column headers to sort tasks ascending/descending
 - **Epic column**: each task shows its parent epic name (linked to Jira) in all tables
