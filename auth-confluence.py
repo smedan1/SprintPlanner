@@ -33,7 +33,7 @@ def main():
         # Wait up to 2 minutes for SSO to complete and land back on Confluence
         print('Waiting for SSO redirect to complete…')
         page.wait_for_url('https://autodesk.atlassian.net/wiki/**', timeout=120_000)
-        page.wait_for_load_state('networkidle', timeout=15_000)
+        page.wait_for_load_state('domcontentloaded', timeout=15_000)
 
         cookies = {c['name']: c['value'] for c in context.cookies()}
         token   = cookies.get(SESSION_COOKIE, '')

@@ -45,8 +45,8 @@ All team-specific settings are stored in `team-config.json`:
 ```json
 {
   "project_key": "FDATA",
-  "board_id": 17259,
-  "board_url": "https://jira.autodesk.com/secure/RapidBoard.jspa?rapidView=17259",
+  "board_id": 5672,
+  "board_url": "https://autodesk.atlassian.net/jira/software/c/projects/FDATA/boards/5672",
   "board_name": "Gemini",
   "team_name": "Gemini",
   "team": ["Person A", "Person B", ...],
@@ -65,7 +65,7 @@ All team-specific settings are stored in `team-config.json`:
 ```
 
 - `board_name` — the Jira board name (from the board picker)
-- `team_name` — the value from the Team dropdown (Jira `customfield_19700`); used to pre-select the team on next Settings open. May differ from `board_name` if the board has a different display name.
+- `team_name` — the value from the Team dropdown (Jira `customfield_11279`); used to pre-select the team on next Settings open. May differ from `board_name` if the board has a different display name.
 - `pa_enabled` / `pr_enabled` — default to `false` for new installs. Must be explicitly enabled in Settings.
 
 Settings are managed via the gear icon in the UI header. On first run with no team configured, the settings modal opens automatically.
@@ -91,11 +91,15 @@ Settings are managed via the gear icon in the UI header. On first run with no te
 - Output: Updates `team-config.json` with team member names
 - Triggered via Settings > "Refresh from Workday"
 
-### Jira (via MCP — primary integration)
-- MCP server: `mcp-jira` (configured in `.mcp.json`, which is gitignored)
-- Docker image: `ghcr.io/sooperset/mcp-atlassian:latest`
-- Jira instance: `https://jira.autodesk.com`
-- **Direct REST API is blocked by Autodesk corporate policy — always use MCP tools**
+### Jira (Cloud REST API)
+- Instance: `https://autodesk.atlassian.net` (Jira Cloud)
+- Auth: `cloud.session.token` cookie (shared SSO session with Confluence, obtained via `auth-confluence.py`)
+- API version: v3 (`/rest/api/3/`). Search uses `POST /rest/api/3/search/jql` (GET is 410 on Cloud)
+- API token generation is locked by Autodesk admins — session cookie auth is the only route
+- Agile API: `/rest/agile/1.0/` (sprints, boards, sprint moves) — still works as-is on Cloud
+- Custom field IDs (Cloud): Story Points = `customfield_10026`, Team = `customfield_11279`
+- Epic/parent: use `parent` field (not `customfield_12780` / "Epic Link" which are deprecated on Cloud)
+- Assignee: uses `accountId` (not `name`); user search via `?query=` (not `?username=`)
 
 ### Confluence (via MCP — for PA and PR schedules)
 - MCP server: `confluence-wiki-api` (configured in `~/.claude.json`, OAuth via `mcp.atlassian.com`)
@@ -110,7 +114,7 @@ Settings are managed via the gear icon in the UI header. On first run with no te
 ## Jira Boards & Sprints
 
 - Board ID, URL, and name are configured in `team-config.json` (set via the Settings board picker)
-- The Settings board picker works by: (1) selecting a **Team** from a dropdown auto-populated from Jira `customfield_19700`, (2) searching Jira Scrum boards matching that team name, (3) auto-selecting if exactly one board matches
+- The Settings board picker works by: (1) selecting a **Team** from a dropdown auto-populated from Jira `customfield_11279`, (2) searching Jira Scrum boards matching that team name, (3) auto-selecting if exactly one board matches
 - Backlog sprints (those without a `startDate`) are selected in Settings and appear as additional drag-from sections
 
 ### How to identify the sprint to plan
@@ -146,9 +150,9 @@ Stored in `holidays-ca-qc.json`. Covers Canada + Quebec holidays for **2026**.
 `sprint-server.py` is a lightweight local HTTP server that bridges `sprint-plan.html` to Jira in real time.
 
 **To use:**
-1. `python sprint-server.py` — runs on http://localhost:5000, reads token from `.mcp.json`
+1. `python sprint-server.py` — runs on http://localhost:5000, reads config from `.mcp.json`
 2. Open `sprint-plan.html` in Chrome
-3. A startup overlay checks server, Jira, Docker, and Confluence health — tasks load automatically once all are green
+3. A startup overlay checks server, Jira, and Confluence health — tasks load automatically once all are green
 
 **What the page does:**
 - Tasks are loaded dynamically on page open (not baked into the HTML) — the server fetches them from Jira
@@ -177,9 +181,9 @@ Stored in `holidays-ca-qc.json`. Covers Canada + Quebec holidays for **2026**.
 
 **Jira fields written by Apply to Jira:**
 - Sprint move → `POST /rest/agile/1.0/sprint/{id}/issue`
-- SP → `customfield_10130` + `timetracking.originalEstimate` (1 SP = 1 day); SP=0 → `4h`; remaining estimate = max(0, original − logged)
-- Assignee → resolved via user search (`username` param, Jira Server API)
-- Priority → `priority.id` or `priority.name` (server normalizes aliases: "Standard" → "Minor")
+- SP → `customfield_10026` + `timetracking.originalEstimate` (1 SP = 1 day); SP=0 → `4h`; remaining estimate = max(0, original − logged)
+- Assignee → resolved via user search (`?query=` param, Jira Cloud API), set via `accountId`
+- Priority → `priority.id` or `priority.name` (server normalizes aliases: "Standard" → "Minor", strips number prefixes like "1. Blocker" → "Blocker")
 
 **Layout:** Two-pane flexbox layout with a draggable splitter between left (capacity) and right (backlogs) columns. Each column scrolls independently. The splitter can be dragged to resize (25%-70% range), double-clicked to collapse the left pane, or single-clicked when collapsed to expand. Width and collapsed state persist in localStorage. Sprint Commitment card has a blue left border accent for visibility when scrolled.
 
@@ -189,9 +193,9 @@ Stored in `holidays-ca-qc.json`. Covers Canada + Quebec holidays for **2026**.
 
 ## Constraints
 
-- Never commit `.mcp.json` — it contains the Jira personal token
+- Never commit `.mcp.json` — it contains session tokens
 - Never commit `team-config.json` — contains team-specific settings
-- Jira REST API is corporate-blocked; MCP is the only route
+- Jira Cloud API tokens are locked by Autodesk admins — use session cookie auth via `auth-confluence.py`
 - Tech stack: Python + Playwright (`channel="chrome"`) for Workday scraping; vanilla JS frontend by design (single-file, no build step)
 
 ## File Reference

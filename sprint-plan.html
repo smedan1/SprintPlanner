@@ -367,13 +367,6 @@
       </div>
     </div>
     <div class="svc-row">
-      <div class="svc-icon" id="svc-docker-icon">⏳</div>
-      <div class="svc-body">
-        <div class="svc-name">Docker Desktop <span style="font-weight:400;color:#5e6c84;">(mcp-jira)</span></div>
-        <div class="svc-hint" id="svc-docker-hint">Checking…</div>
-      </div>
-    </div>
-    <div class="svc-row">
       <div class="svc-icon" id="svc-confluence-icon">⏳</div>
       <div class="svc-body">
         <div class="svc-name">Confluence MCP <span style="font-weight:400;color:#5e6c84;">(mcp.atlassian.com)</span></div>
@@ -980,7 +973,7 @@
     if (spillTasks.length > 0) {
       html += '<table><thead><tr><th>Key</th><th>Summary</th><th style="text-align:right">Remaining SP</th></tr></thead><tbody>';
       spillTasks.forEach(function(t) {
-        html += '<tr><td><a href="https://jira.autodesk.com/browse/' + t.key + '" target="_blank">' + t.key + '</a></td>';
+        html += '<tr><td><a href="https://autodesk.atlassian.net/browse/' + t.key + '" target="_blank">' + t.key + '</a></td>';
         html += '<td>' + escHtml(t.summary) + '</td>';
         html += '<td style="text-align:right">' + t.remaining_sp.toFixed(1) + '</td></tr>';
       });
@@ -996,7 +989,7 @@
     if (tasks.length > 0) {
       html += '<table><thead><tr><th>Key</th><th>Summary</th><th style="text-align:right">SP</th></tr></thead><tbody>';
       tasks.forEach(function(t) {
-        html += '<tr><td><a href="https://jira.autodesk.com/browse/' + t.key + '" target="_blank">' + t.key + '</a></td>';
+        html += '<tr><td><a href="https://autodesk.atlassian.net/browse/' + t.key + '" target="_blank">' + t.key + '</a></td>';
         html += '<td>' + t.summary + '</td>';
         html += '<td>' + (t.sp != null ? t.sp.toFixed(1) : '\u2014') + '</td></tr>';
       });
@@ -1427,7 +1420,7 @@
     tr.dataset.key          = issue.key;
     tr.dataset.sp           = issue.sp != null ? sp : '';
     tr.dataset.assignee     = asgn;
-    tr.dataset.assigneeKey  = issue.assignee_name || '';
+    tr.dataset.assigneeKey  = issue.assignee_id || '';
     tr.dataset.priority     = issue.priority || '';
     tr.dataset.priorityId   = issue.priority_id || '';
     tr.dataset.issueType    = issue.type || '';
@@ -1437,10 +1430,10 @@
     var isEpic = (issue.type || '').toLowerCase() === 'epic';
     var expandIcon = isEpic ? '<span class="epic-expand-icon">&#9654;</span>' : '';
     var epicCell = issue.epic_key
-      ? '<a href="https://jira.autodesk.com/browse/' + escHtml(issue.epic_key) + '" target="_blank" title="' + escHtml(issue.epic_name) + '">' + escHtml(issue.epic_name) + '</a>'
+      ? '<a href="https://autodesk.atlassian.net/browse/' + escHtml(issue.epic_key) + '" target="_blank" title="' + escHtml(issue.epic_name) + '">' + escHtml(issue.epic_name) + '</a>'
       : '';
     tr.innerHTML =
-      '<td>' + expandIcon + '<a href="https://jira.autodesk.com/browse/' + issue.key + '" target="_blank">' + issue.key + '</a></td>' +
+      '<td>' + expandIcon + '<a href="https://autodesk.atlassian.net/browse/' + issue.key + '" target="_blank">' + issue.key + '</a></td>' +
       '<td>' + escHtml(issue.summary) + '</td>' +
       '<td class="epic-cell">' + epicCell + '</td>' +
       '<td><span class="badge badge-' + type + '">' + escHtml(issue.type) + '</span></td>' +
@@ -1527,7 +1520,7 @@
     tr.dataset.key = child.key;
     tr.dataset.sp = child.sp != null ? sp : '';
     tr.dataset.assignee = child.assignee_display || '';
-    tr.dataset.assigneeKey = child.assignee_name || '';
+    tr.dataset.assigneeKey = child.assignee_id || '';
     tr.dataset.priority = child.priority || '';
     tr.dataset.priorityId = child.priority_id || '';
     tr.dataset.issueType = child.type || '';
@@ -1559,7 +1552,7 @@
     }
 
     tr.innerHTML =
-      '<td><a href="https://jira.autodesk.com/browse/' + child.key + '" target="_blank">' + child.key + '</a></td>' +
+      '<td><a href="https://autodesk.atlassian.net/browse/' + child.key + '" target="_blank">' + child.key + '</a></td>' +
       '<td>' + escHtml(child.summary) + sprintBadges + '</td>' +
       '<td class="epic-cell"></td>' +
       '<td><span class="badge badge-' + type + '">' + escHtml(child.type) + '</span></td>' +
@@ -1651,7 +1644,7 @@
       summary: epicChildRow.querySelectorAll('td')[1].textContent.trim(),
       sp: epicChildRow.dataset.sp !== '' ? parseFloat(epicChildRow.dataset.sp) : null,
       assignee_display: epicChildRow.dataset.assignee || '',
-      assignee_name: epicChildRow.dataset.assigneeKey || '',
+      assignee_id: epicChildRow.dataset.assigneeKey || '',
       type: epicChildRow.dataset.issueType || '',
       status: epicChildRow.querySelectorAll('td')[7].textContent.trim(),
       priority: epicChildRow.dataset.priority || '',
@@ -2549,7 +2542,7 @@
               if (newAsgn !== oldAsgn) {
                 row.dataset.assignee     = newAsgn;
                 row.dataset.origAssignee = newAsgn;
-                row.dataset.assigneeKey  = issue.assignee_name || '';
+                row.dataset.assigneeKey  = issue.assignee_id || '';
                 var aInput = row.querySelector('.assignee-edit');
                 if (aInput) aInput.value = newAsgn;
                 flashCell(row.querySelectorAll('td')[4]);
@@ -3036,7 +3029,7 @@
     var boardName = selectedBoardName || teamConfig.board_name || '';
     var boardChanged = boardId !== teamConfig.board_id;
     var boardUrl = boardId
-      ? 'https://jira.autodesk.com/secure/RapidBoard.jspa?rapidView=' + boardId
+      ? 'https://autodesk.atlassian.net/jira/software/c/projects/' + encodeURIComponent(document.getElementById('settings-project-key').value.trim() || 'FDATA') + '/boards/' + boardId
       : teamConfig.board_url || '';
     var paEnabled = document.getElementById('settings-pa-enabled').checked;
     var paUrl = document.getElementById('settings-pa-url').value.trim();
@@ -3402,8 +3395,6 @@
     var svrHint      = document.getElementById('svc-server-hint');
     var jiraIcon     = document.getElementById('svc-jira-icon');
     var jiraHint     = document.getElementById('svc-jira-hint');
-    var dockerIcon   = document.getElementById('svc-docker-icon');
-    var dockerHint   = document.getElementById('svc-docker-hint');
     var confIcon     = document.getElementById('svc-confluence-icon');
     var confHint     = document.getElementById('svc-confluence-hint');
     var absRow       = document.getElementById('svc-absences');
@@ -3451,13 +3442,12 @@
     }
 
     // Track which services have already passed — don't recheck them
-    var passed = { jira: false, docker: false, confluence: false };
+    var passed = { jira: false, confluence: false };
     var confluenceReauthPending = false;
 
     function poll() {
       // Only show spinner for services not yet passing
       if (!passed.jira)       setRow(jiraIcon,   jiraHint,   'checking', 'Checking…');
-      if (!passed.docker)     setRow(dockerIcon, dockerHint, 'checking', 'Checking…');
       if (!passed.confluence && !confluenceReauthPending) setRow(confIcon, confHint, 'checking', 'Checking…');
 
       // Tell the server to skip checks for services already confirmed OK
@@ -3472,21 +3462,11 @@
           if (!passed.jira) {
             if (d.jira) {
               passed.jira = true;
-              setRow(jiraIcon, jiraHint, 'ok', 'Connected to jira.autodesk.com');
+              setRow(jiraIcon, jiraHint, 'ok', 'Connected to autodesk.atlassian.net');
             } else {
               setRow(jiraIcon, jiraHint, 'err',
                 'Unreachable' + (d.jira_error ? ': ' + d.jira_error : '') +
-                ' — make sure MCP server is running');
-            }
-          }
-
-          if (!passed.docker) {
-            if (d.docker) {
-              passed.docker = true;
-              setRow(dockerIcon, dockerHint, 'ok', 'Docker Desktop is running');
-            } else {
-              setRow(dockerIcon, dockerHint, 'err',
-                (d.docker_error || 'Not running') + ' — start Docker Desktop');
+                ' — re-authenticate via Confluence SSO');
             }
           }
 
@@ -3511,7 +3491,7 @@
             }
           }
 
-          if (passed.jira && passed.docker && passed.confluence) {
+          if (passed.jira && passed.confluence) {
             // Check if team is configured before running absence/PA checks
             fetch('http://localhost:5000/api/team-status', { signal: AbortSignal.timeout(TIMEOUT_DEFAULT) })
               .then(function(r) { return r.json(); })
@@ -3546,9 +3526,8 @@
         .catch(function () {
           setRow(svrIcon, svrHint, 'err', 'Not running — start with: python sprint-server.py');
           // Reset passed state since server is down
-          passed = { jira: false, docker: false, confluence: false };
+          passed = { jira: false, confluence: false };
           setRow(jiraIcon,   jiraHint,   'checking', 'Waiting for server…');
-          setRow(dockerIcon, dockerHint, 'checking', 'Waiting for server…');
           setRow(confIcon,   confHint,   'checking', 'Waiting for server…');
           setTimeout(poll, 4000);
         });

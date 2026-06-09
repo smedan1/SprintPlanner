@@ -34,7 +34,7 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 MCP_JSON   = os.path.join(SCRIPT_DIR, '.mcp.json')
 
 # Network timeout constants (seconds)
-TIMEOUT_HEALTH = 10   # health checks (Jira serverInfo, Docker info)
+TIMEOUT_HEALTH = 10   # health checks (Jira myself, Confluence user)
 TIMEOUT_API    = 15   # standard Jira/Confluence API calls
 TIMEOUT_HEAVY  = 20   # heavier fetches (search with many results, epic children)
 
@@ -42,11 +42,24 @@ TIMEOUT_HEAVY  = 20   # heavier fetches (search with many results, epic children
 def load_config():
     with open(MCP_JSON, 'r') as f:
         cfg = json.load(f)
-    env = cfg['mcpServers']['mcp-jira']['env']
-    return env['JIRA_URL'], env['JIRA_PERSONAL_TOKEN']
+    try:
+        jira_url = cfg['mcpServers']['mcp-jira']['env']['JIRA_URL']
+    except (KeyError, TypeError):
+        jira_url = cfg.get('confluence', {}).get('url', '')
+    return jira_url
 
 
-JIRA_URL, JIRA_TOKEN = load_config()
+JIRA_URL = load_config()
+
+
+def _jira_headers(content_type=None):
+    h = {
+        'Cookie': f'cloud.session.token={get_confluence_session_token()}',
+        'Accept': 'application/json',
+    }
+    if content_type:
+        h['Content-Type'] = content_type
+    return h
 
 
 # ── Confluence session auth ───────────────────────────────────────────────────
@@ -121,7 +134,7 @@ def _download_priority_icon(icon_url: str, pri_name: str) -> str:
     if os.path.exists(local_path):
         return f'icons/{local_name}'
     try:
-        req = urllib.request.Request(icon_url, headers={'Authorization': f'Bearer {JIRA_TOKEN}'})
+        req = urllib.request.Request(icon_url, headers=_jira_headers())
         with urllib.request.urlopen(req, timeout=TIMEOUT_API) as resp:
             data = resp.read()
         with open(local_path, 'wb') as f:
@@ -138,9 +151,9 @@ def fetch_jira_priorities() -> list[dict]:
     if _PRIORITIES_CACHE is not None:
         return _PRIORITIES_CACHE
     req = urllib.request.Request(
-        f'{JIRA_URL}/rest/api/2/priority',
+        f'{JIRA_URL}/rest/api/3/priority',
         method='GET',
-        headers={'Authorization': f'Bearer {JIRA_TOKEN}'}
+        headers=_jira_headers()
     )
     try:
         with urllib.request.urlopen(req, timeout=TIMEOUT_API) as resp:
@@ -170,11 +183,26 @@ def fetch_jira_priorities() -> list[dict]:
 
 # ── Jira API calls ────────────────────────────────────────────────────────────
 
+def _jira_search(jql: str, fields: str | list, max_results: int = 200,
+                 timeout: int = TIMEOUT_API) -> dict:
+    """JQL search via POST (GET /search is 410 on Jira Cloud)."""
+    if isinstance(fields, str):
+        fields = [f.strip() for f in fields.split(',')]
+    req = urllib.request.Request(
+        f'{JIRA_URL}/rest/api/3/search/jql',
+        data=json.dumps({'jql': jql, 'fields': fields, 'maxResults': max_results}).encode('utf-8'),
+        method='POST',
+        headers=_jira_headers('application/json')
+    )
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        return json.loads(resp.read().decode('utf-8'))
+
+
 def check_jira_health() -> tuple[bool, str]:
     req = urllib.request.Request(
-        f'{JIRA_URL}/rest/api/2/serverInfo',
+        f'{JIRA_URL}/rest/api/3/myself',
         method='GET',
-        headers={'Authorization': f'Bearer {JIRA_TOKEN}'}
+        headers=_jira_headers()
     )
     try:
         with urllib.request.urlopen(req, timeout=TIMEOUT_HEALTH) as resp:
@@ -185,41 +213,15 @@ def check_jira_health() -> tuple[bool, str]:
         return False, str(e)
 
 
-def check_docker() -> tuple[bool, str]:
-    try:
-        result = subprocess.run(
-            ['docker', 'info', '--format', '{{.ServerVersion}}'],
-            capture_output=True, timeout=TIMEOUT_HEALTH
-        )
-        if result.returncode == 0:
-            return True, ''
-        return False, result.stderr.decode('utf-8', errors='replace').strip().splitlines()[0]
-    except FileNotFoundError:
-        return False, 'docker not found in PATH'
-    except subprocess.TimeoutExpired:
-        return False, 'timed out'
-    except Exception as e:
-        return False, str(e)
-
-
-TEAM_FIELD_ID = 'customfield_19700'  # "Team" multiselect on FDATA issues
+TEAM_FIELD_ID = 'customfield_11279'  # "Team" multiselect (Cloud)
 
 
 def get_story_points(issue_keys: list[str]) -> tuple[int, dict]:
-    params = urllib.parse.urlencode({
-        'jql': 'key in (' + ','.join(issue_keys) + ')',
-        'fields': 'customfield_10130',
-        'maxResults': 200,
-    })
-    req = urllib.request.Request(
-        f'{JIRA_URL}/rest/api/2/search?{params}',
-        method='GET',
-        headers={'Content-Type': 'application/json', 'Authorization': f'Bearer {JIRA_TOKEN}'}
-    )
     try:
-        with urllib.request.urlopen(req, timeout=TIMEOUT_API) as resp:
-            body = json.loads(resp.read().decode('utf-8'))
-        return 200, {i['key']: i.get('fields', {}).get('customfield_10130')
+        body = _jira_search(
+            'key in (' + ','.join(issue_keys) + ')',
+            'customfield_10026', max_results=200)
+        return 200, {i['key']: i.get('fields', {}).get('customfield_10026')
                      for i in body.get('issues', [])}
     except urllib.error.HTTPError as e:
         e.read(); return e.code, {}
@@ -231,20 +233,10 @@ def _resolve_epic_names(epic_keys: list[str]) -> dict[str, str]:
     """Batch-fetch epic summaries by key. Returns {key: summary}."""
     if not epic_keys:
         return {}
-    jql = 'key in (' + ','.join(epic_keys) + ')'
-    params = urllib.parse.urlencode({
-        'jql': jql,
-        'fields': 'summary',
-        'maxResults': len(epic_keys),
-    })
-    req = urllib.request.Request(
-        f'{JIRA_URL}/rest/api/2/search?{params}',
-        method='GET',
-        headers={'Content-Type': 'application/json', 'Authorization': f'Bearer {JIRA_TOKEN}'}
-    )
     try:
-        with urllib.request.urlopen(req, timeout=TIMEOUT_API) as resp:
-            body = json.loads(resp.read().decode('utf-8'))
+        body = _jira_search(
+            'key in (' + ','.join(epic_keys) + ')',
+            'summary', max_results=len(epic_keys))
         return {i['key']: i['fields'].get('summary', '') for i in body.get('issues', [])}
     except Exception as e:
         print(f'  x Failed to resolve epic names: {e}')
@@ -253,19 +245,11 @@ def _resolve_epic_names(epic_keys: list[str]) -> dict[str, str]:
 
 def get_issues_for_sprint(sprint_id: int) -> list[dict]:
     """Fetch all issues in a sprint with SP, assignee, and metadata."""
-    params = urllib.parse.urlencode({
-        'jql': f'sprint = {sprint_id} ORDER BY created ASC',
-        'fields': 'customfield_10130,customfield_12780,assignee,summary,issuetype,status,priority',
-        'maxResults': 500,
-    })
-    req = urllib.request.Request(
-        f'{JIRA_URL}/rest/api/2/search?{params}',
-        method='GET',
-        headers={'Content-Type': 'application/json', 'Authorization': f'Bearer {JIRA_TOKEN}'}
-    )
     try:
-        with urllib.request.urlopen(req, timeout=TIMEOUT_HEAVY) as resp:
-            body = json.loads(resp.read().decode('utf-8'))
+        body = _jira_search(
+            f'sprint = {sprint_id} ORDER BY created ASC',
+            'customfield_10026,parent,assignee,summary,issuetype,status,priority',
+            max_results=500, timeout=TIMEOUT_HEAVY)
         result = []
         for i in body.get('issues', []):
             fields   = i.get('fields', {})
@@ -276,18 +260,14 @@ def get_issues_for_sprint(sprint_id: int) -> list[dict]:
             assignee = fields.get('assignee') or {}
             pri      = fields.get('priority') or {}
             pri_name = _strip_pri_name(pri.get('name', ''))
-            epic_raw = fields.get('customfield_12780')
-            epic_key = ''
-            if isinstance(epic_raw, str):
-                epic_key = epic_raw
-            elif isinstance(epic_raw, dict):
-                epic_key = epic_raw.get('value', '') or epic_raw.get('key', '')
+            parent = fields.get('parent') or {}
+            epic_key = parent.get('key', '')
             result.append({
                 'key':              i['key'],
                 'summary':          fields.get('summary', ''),
-                'sp':               fields.get('customfield_10130'),
+                'sp':               fields.get('customfield_10026'),
                 'assignee_display': assignee.get('displayName') or '',
-                'assignee_name':    assignee.get('name') or '',
+                'assignee_id':      assignee.get('accountId') or '',
                 'type':             (fields.get('issuetype') or {}).get('name', 'Story'),
                 'status':           (fields.get('status')    or {}).get('name', ''),
                 'priority':         pri_name,
@@ -305,26 +285,18 @@ def get_issues_for_sprint(sprint_id: int) -> list[dict]:
                 if r['epic_key']:
                     r['epic_name'] = epic_names.get(r['epic_key'], '')
         return result
-    except Exception:
+    except Exception as e:
+        print(f'  x Failed to fetch issues for sprint {sprint_id}: {e}')
         return []
 
 
 def get_epic_children(epic_key: str) -> list[dict]:
     """Fetch child issues of an epic from Jira."""
-    jql = f'"Epic Link" = {epic_key} OR parent = {epic_key} ORDER BY priority ASC, created ASC'
-    params = urllib.parse.urlencode({
-        'jql': jql,
-        'fields': 'customfield_10130,assignee,summary,issuetype,status,priority,sprint',
-        'maxResults': 200,
-    })
-    req = urllib.request.Request(
-        f'{JIRA_URL}/rest/api/2/search?{params}',
-        method='GET',
-        headers={'Content-Type': 'application/json', 'Authorization': f'Bearer {JIRA_TOKEN}'}
-    )
+    jql = f'parent = {epic_key} ORDER BY priority ASC, created ASC'
     try:
-        with urllib.request.urlopen(req, timeout=TIMEOUT_HEAVY) as resp:
-            body = json.loads(resp.read().decode('utf-8'))
+        body = _jira_search(jql,
+            'customfield_10026,assignee,summary,issuetype,status,priority,sprint',
+            max_results=200, timeout=TIMEOUT_HEAVY)
         result = []
         for i in body.get('issues', []):
             fields = i.get('fields', {})
@@ -345,9 +317,9 @@ def get_epic_children(epic_key: str) -> list[dict]:
             result.append({
                 'key':              i['key'],
                 'summary':          fields.get('summary', ''),
-                'sp':               fields.get('customfield_10130'),
+                'sp':               fields.get('customfield_10026'),
                 'assignee_display': assignee.get('displayName') or '',
-                'assignee_name':    assignee.get('name') or '',
+                'assignee_id':      assignee.get('accountId') or '',
                 'type':             (fields.get('issuetype') or {}).get('name', 'Story'),
                 'status':           (fields.get('status')    or {}).get('name', ''),
                 'priority':         pri_name,
@@ -401,9 +373,9 @@ def _parse_estimate_to_sp(estimate_str: str, fallback_secs: int) -> float:
 def get_time_spent(issue_key: str) -> int:
     """Returns timeSpentSeconds for the issue. Returns 0 on error or no logged work."""
     req = urllib.request.Request(
-        f'{JIRA_URL}/rest/api/2/issue/{issue_key}?fields=timetracking',
+        f'{JIRA_URL}/rest/api/3/issue/{issue_key}?fields=timetracking',
         method='GET',
-        headers={'Content-Type': 'application/json', 'Authorization': f'Bearer {JIRA_TOKEN}'}
+        headers=_jira_headers('application/json')
     )
     try:
         with urllib.request.urlopen(req, timeout=TIMEOUT_API) as resp:
@@ -429,10 +401,10 @@ def _secs_to_estimate(secs: int) -> str:
 
 def update_issue_fields(issue_key: str, fields: dict) -> tuple[int, str]:
     req = urllib.request.Request(
-        f'{JIRA_URL}/rest/api/2/issue/{issue_key}',
+        f'{JIRA_URL}/rest/api/3/issue/{issue_key}',
         data=json.dumps({'fields': fields}).encode('utf-8'),
         method='PUT',
-        headers={'Content-Type': 'application/json', 'Authorization': f'Bearer {JIRA_TOKEN}'}
+        headers=_jira_headers('application/json')
     )
     try:
         with urllib.request.urlopen(req, timeout=TIMEOUT_API) as resp:
@@ -443,26 +415,24 @@ def update_issue_fields(issue_key: str, fields: dict) -> tuple[int, str]:
         return 0, str(e)
 
 
-def find_user_name(display_name: str) -> tuple[str, str]:
-    """Search Jira Server for a user by display name.
-    Returns (username, error_message). On success error_message is empty."""
-    # Jira Server uses 'username' param; Jira Cloud uses 'query'
-    params = urllib.parse.urlencode({'username': display_name, 'maxResults': 5})
+def find_user_account_id(display_name: str) -> tuple[str, str]:
+    """Search Jira Cloud for a user by display name.
+    Returns (account_id, error_message). On success error_message is empty."""
+    params = urllib.parse.urlencode({'query': display_name, 'maxResults': 5})
     req = urllib.request.Request(
-        f'{JIRA_URL}/rest/api/2/user/search?{params}',
+        f'{JIRA_URL}/rest/api/3/user/search?{params}',
         method='GET',
-        headers={'Authorization': f'Bearer {JIRA_TOKEN}'}
+        headers=_jira_headers()
     )
     try:
         with urllib.request.urlopen(req, timeout=TIMEOUT_API) as resp:
             users = json.loads(resp.read().decode('utf-8'))
         if not users:
             return '', f"No Jira user found matching '{display_name}'"
-        # Prefer exact display name match, else take first result
         for u in users:
             if u.get('displayName', '').lower() == display_name.lower():
-                return u['name'], ''
-        return users[0]['name'], ''
+                return u['accountId'], ''
+        return users[0]['accountId'], ''
     except urllib.error.HTTPError as e:
         return '', f'User search HTTP {e.code}'
     except Exception as e:
@@ -474,7 +444,7 @@ def move_issue_to_sprint(issue_key: str, sprint_id: int) -> tuple[int, str]:
         f'{JIRA_URL}/rest/agile/1.0/sprint/{sprint_id}/issue',
         data=json.dumps({'issues': [issue_key]}).encode('utf-8'),
         method='POST',
-        headers={'Content-Type': 'application/json', 'Authorization': f'Bearer {JIRA_TOKEN}'}
+        headers=_jira_headers('application/json')
     )
     try:
         with urllib.request.urlopen(req, timeout=TIMEOUT_API) as resp:
@@ -547,7 +517,7 @@ def get_board_name() -> str:
         try:
             req = urllib.request.Request(
                 f'{JIRA_URL}/rest/agile/1.0/board/{cfg["board_id"]}',
-                headers={'Authorization': f'Bearer {JIRA_TOKEN}'})
+                headers=_jira_headers())
             with urllib.request.urlopen(req, timeout=TIMEOUT_API) as resp:
                 data = json.loads(resp.read().decode('utf-8'))
                 name = data.get('name', '')
@@ -1166,7 +1136,7 @@ def get_active_sprint(board_id: int) -> dict | None:
     req = urllib.request.Request(
         f'{JIRA_URL}/rest/agile/1.0/board/{board_id}/sprint?state=active',
         method='GET',
-        headers={'Authorization': f'Bearer {JIRA_TOKEN}'}
+        headers=_jira_headers()
     )
     try:
         with urllib.request.urlopen(req, timeout=TIMEOUT_API) as resp:
@@ -1190,21 +1160,13 @@ def get_spillover_for_sprint(sprint_id: int, team: list[str]) -> tuple[dict, dic
       spillover = {person: total_sp}
       spillover_detail = {person: {sp: total, tasks: [{key, summary, remaining_sp}]}}
     """
-    params = urllib.parse.urlencode({
-        'jql': f'sprint = {sprint_id} ORDER BY created ASC',
-        'fields': 'assignee,status,timetracking,summary,customfield_10130',
-        'maxResults': 500,
-    })
-    req = urllib.request.Request(
-        f'{JIRA_URL}/rest/api/2/search?{params}',
-        method='GET',
-        headers={'Content-Type': 'application/json', 'Authorization': f'Bearer {JIRA_TOKEN}'}
-    )
     spillover: dict[str, float] = {}
     detail: dict[str, dict] = {}
     try:
-        with urllib.request.urlopen(req, timeout=TIMEOUT_HEAVY) as resp:
-            body = json.loads(resp.read().decode('utf-8'))
+        body = _jira_search(
+            f'sprint = {sprint_id} ORDER BY created ASC',
+            'assignee,status,timetracking,summary,customfield_10026',
+            max_results=500, timeout=TIMEOUT_HEAVY)
         team_set = set(team)
         for issue in body.get('issues', []):
             fields = issue.get('fields', {})
@@ -1247,7 +1209,7 @@ def get_future_sprint_info(board_id: int) -> tuple[dict | None, dict]:
     req = urllib.request.Request(
         f'{JIRA_URL}/rest/agile/1.0/board/{board_id}/sprint?state=future',
         method='GET',
-        headers={'Authorization': f'Bearer {JIRA_TOKEN}'}
+        headers=_jira_headers()
     )
     try:
         with urllib.request.urlopen(req, timeout=TIMEOUT_API) as resp:
@@ -1362,10 +1324,6 @@ class Handler(BaseHTTPRequestHandler):
             if 'jira' not in skip:
                 jira_ok, jira_err = check_jira_health()
 
-            docker_ok = docker_err = None
-            if 'docker' not in skip:
-                docker_ok, docker_err = check_docker()
-
             conf_ok = conf_user = conf_err = conf_needs_auth = None
             if 'confluence' not in skip:
                 conf_ok, conf_user, conf_err, conf_needs_auth = check_confluence_auth()
@@ -1373,7 +1331,6 @@ class Handler(BaseHTTPRequestHandler):
             self._respond(200, {
                 'server': 'ok',
                 'jira':      jira_ok,   'jira_error':      jira_err,
-                'docker':    docker_ok, 'docker_error':    docker_err,
                 'confluence': conf_ok,  'confluence_error': conf_err,
                 'confluence_user':       conf_user,
                 'confluence_needs_auth': conf_needs_auth,
@@ -1534,7 +1491,7 @@ class Handler(BaseHTTPRequestHandler):
                     params += '&name=' + urllib.parse.quote(name_filter)
                 url = f'{JIRA_URL}/rest/agile/1.0/board?{params}'
                 req = urllib.request.Request(url, method='GET',
-                                             headers={'Authorization': f'Bearer {JIRA_TOKEN}'})
+                                             headers=_jira_headers())
                 with urllib.request.urlopen(req, timeout=TIMEOUT_API) as resp:
                     data = json.loads(resp.read().decode('utf-8'))
                 boards = [{'id': b['id'], 'name': b['name']} for b in data.get('values', [])]
@@ -1554,19 +1511,10 @@ class Handler(BaseHTTPRequestHandler):
                 self._respond(200, [])
                 return
             teams = []
-            hdrs = {'Authorization': f'Bearer {JIRA_TOKEN}'}
             try:
-                params = urllib.parse.urlencode({
-                    'jql': f'project = "{project}" AND cf[19700] is not EMPTY ORDER BY created DESC',
-                    'fields': TEAM_FIELD_ID,
-                    'maxResults': 500,
-                })
-                with urllib.request.urlopen(
-                    urllib.request.Request(f'{JIRA_URL}/rest/api/2/search?{params}',
-                                           headers=hdrs),
-                    timeout=TIMEOUT_API
-                ) as r:
-                    s_data = json.loads(r.read().decode('utf-8'))
+                s_data = _jira_search(
+                    f'project = "{project}" AND cf[11279] is not EMPTY ORDER BY created DESC',
+                    TEAM_FIELD_ID, max_results=500)
                 seen = set()
                 for issue in s_data.get('issues', []):
                     raw = issue.get('fields', {}).get(TEAM_FIELD_ID) or []
@@ -1783,7 +1731,7 @@ class Handler(BaseHTTPRequestHandler):
             if 'sp' in data:
                 sp_val   = data['sp']
                 sp_float = float(sp_val) if sp_val is not None else None
-                fields['customfield_10130'] = sp_float
+                fields['customfield_10026'] = sp_float
                 if sp_float is None:
                     # Clearing SP: clear all three
                     fields['timetracking'] = {'originalEstimate': '', 'remainingEstimate': ''}
@@ -1800,12 +1748,12 @@ class Handler(BaseHTTPRequestHandler):
             if 'assignee' in data:
                 name = (data['assignee'] or '').strip()
                 if name:
-                    username, err = find_user_name(name)
+                    account_id, err = find_user_account_id(name)
                     if err:
                         print(f'  x User lookup failed for "{name}": {err}')
                         self._respond(400, {'error': f'Cannot assign: {err}'}); return
-                    print(f'  > Resolved "{name}" -> "{username}"')
-                    fields['assignee'] = {'name': username}
+                    print(f'  > Resolved "{name}" -> "{account_id}"')
+                    fields['assignee'] = {'accountId': account_id}
                 else:
                     fields['assignee'] = None  # unassign
             if 'priority' in data:

@@ -8,9 +8,7 @@ A drag-and-drop sprint capacity planning tool that syncs with Jira in real time.
 
 - **Python 3.10+**
 - **Playwright** for Python: `pip install playwright && playwright install chromium`
-- **Docker Desktop** (for the Jira MCP server)
-- **Chrome** (Playwright uses your local Chrome for Workday SSO)
-- A **Jira personal access token** for your Jira instance
+- **Chrome** (Playwright uses your local Chrome for Workday SSO and Confluence/Jira authentication)
 
 ### 1. Configure Jira access
 
@@ -20,25 +18,19 @@ Create `.mcp.json` in the project root (this file is gitignored):
 {
   "mcpServers": {
     "mcp-jira": {
-      "command": "docker",
-      "args": [
-        "run", "--rm", "-i",
-        "-e", "JIRA_URL",
-        "-e", "JIRA_PERSONAL_TOKEN",
-        "-e", "JIRA_SSL_VERIFY",
-        "ghcr.io/sooperset/mcp-atlassian:latest"
-      ],
       "env": {
-        "JIRA_URL": "https://your-jira-instance.com",
-        "JIRA_PERSONAL_TOKEN": "your-token-here",
-        "JIRA_SSL_VERIFY": "true"
+        "JIRA_URL": "https://your-instance.atlassian.net"
       }
     }
+  },
+  "confluence": {
+    "url": "https://your-instance.atlassian.net",
+    "session_token": ""
   }
 }
 ```
 
-To generate a Jira personal access token: Jira > Profile > Personal Access Tokens > Create token.
+Authentication uses Atlassian Cloud SSO session cookies. Run `python auth-confluence.py` to open a browser, complete SSO login, and save the session token. This token is used for both Jira and Confluence API calls.
 
 ### 2. Start the server
 
@@ -53,9 +45,8 @@ This starts a local HTTP server on http://localhost:5000 that bridges the UI to 
 Open `sprint-plan.html` in Chrome. A startup overlay checks that all services are healthy:
 
 - **Server**: `sprint-server.py` is running
-- **Jira**: reachable via the MCP Docker container
-- **Docker**: Docker Desktop is running
-- **Confluence**: authenticated (optional, for PA schedule)
+- **Jira**: authenticated and reachable
+- **Confluence**: authenticated (required for PA/PR schedules if enabled)
 
 ### 4. First-time setup
 
@@ -132,7 +123,7 @@ All settings are stored in `team-config.json`:
 | `board_id` | Jira board ID (set by the board picker in Settings) |
 | `board_url` | Full Jira board URL |
 | `board_name` | Jira board display name |
-| `team_name` | Value from the Jira Team field (`customfield_19700`); used to pre-select the Team dropdown in Settings |
+| `team_name` | Value from the Jira Team field (`customfield_11279`); used to pre-select the Team dropdown in Settings |
 | `team` | Array of team member names |
 | `efficiency.default` | Default efficiency % for all members (typically 70) |
 | `efficiency.<name>` | Per-person override (e.g. 50 for part-time, 0 for fully allocated elsewhere) |
@@ -200,10 +191,10 @@ sprint-plan.html       # Interactive sprint planner UI
 sprint-server.py       # Local HTTP server (Jira bridge)
 fetch-absences.py      # Workday absence scraper
 fetch-team.py          # Workday team list scraper
-auth-confluence.py     # Confluence OAuth helper
+auth-confluence.py     # Atlassian Cloud SSO session helper
 team-config.json       # Team settings (not committed)
 holidays-ca-qc.json          # Holiday calendar
-.mcp.json              # Jira MCP config with token (gitignored)
+.mcp.json              # Jira/Confluence config with session token (gitignored)
 absences.json          # Cached absence data (auto-generated)
 pa-schedule.json       # Cached PA schedule (auto-generated)
 pr-schedule.json       # Cached PR review schedule (auto-generated)
