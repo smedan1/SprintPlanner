@@ -99,7 +99,7 @@ All settings are stored in `team-config.json`:
 {
   "project_key": "FDATA",
   "board_id": 12345,
-  "board_url": "https://your-jira.com/secure/RapidBoard.jspa?rapidView=12345",
+  "board_url": "https://your-instance.atlassian.net/jira/software/c/projects/FDATA/boards/12345",
   "board_name": "Gemini",
   "team_name": "Gemini",
   "team": ["Alice", "Bob", "Charlie"],
@@ -176,13 +176,13 @@ The absence scraper clicks each absence event block on the Workday calendar to o
 
 ## Confluence Integration (optional)
 
-If your team uses a PA (Promotion Analysis) rotation tracked in Confluence:
+If your team uses a PA (Promotion Analysis) or PR review rotation tracked in Confluence:
 
-1. Enable PA in Settings and provide the Confluence page URL
-2. Set up Confluence OAuth: the startup overlay will prompt for authentication if needed
-3. Map Confluence account IDs to team member names in `confluence_account_ids`
+1. Enable PA and/or PR in Settings and provide the Confluence page URLs
+2. The startup overlay will prompt for SSO authentication if the session has expired
+3. Confluence account IDs are auto-discovered and cached in `confluence_account_ids`
 
-The server reads the PA schedule table from Confluence and assigns 1 day per person per PA duty that falls within the sprint window.
+The server reads schedule tables from Confluence and assigns deduction days per person for duties that fall within the sprint window.
 
 ## File Structure
 
